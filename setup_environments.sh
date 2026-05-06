@@ -131,15 +131,21 @@ create_amplify_env() {
         return 0
     fi
 
-    # AMPlify requires Python 3.6 — libmamba often fails with old packages.
-    # We use the two-step method recommended by BirolLab/AMPlify.
-    info "Step 1/2: Creating Python 3.6 base environment ..."
-    conda create -n amplify_env python=3.6 -c conda-forge --solver=classic -y \
-        || conda create -n amplify_env python=3.6 -c conda-forge -y
+    # AMPlify requires Python 3.6.
+    # mamba resolves old dependency trees that conda/libmamba cannot.
+    # Requires mamba: conda install -n base -c conda-forge mamba
 
-    info "Step 2/2: Installing AMPlify from bioconda ..."
-    conda install -n amplify_env -c bioconda -c conda-forge amplify --solver=classic -y \
-        || conda install -n amplify_env -c bioconda -c conda-forge amplify -y
+    if ! command -v mamba &>/dev/null; then
+        fail "mamba not found. Install it first:"
+        info "conda install -n base -c conda-forge mamba"
+        return 1
+    fi
+
+    info "Step 1/2: Creating Python 3.6 base environment ..."
+    conda create -n amplify_env python=3.6 -y
+
+    info "Step 2/2: Installing AMPlify via mamba (bioconda::amplify) ..."
+    conda activate amplify_env && mamba install bioconda::amplify -y
 
     # Quick smoke test
     if conda run -n amplify_env AMPlify --help &>/dev/null; then

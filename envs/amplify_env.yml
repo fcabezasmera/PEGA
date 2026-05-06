@@ -3,6 +3,16 @@ channels:
   - bioconda
   - conda-forge
   - defaults
+
+# AMPlify requires Python 3.6. The recommended install method is:
+#
+#   conda create -n amplify_env python=3.6 -y
+#   conda activate amplify_env
+#   mamba install bioconda::amplify
+#
+# mamba is required because conda/libmamba cannot resolve the old
+# Python 3.6 + TensorFlow 1.12 dependency tree.
+# Install mamba with: conda install -n base -c conda-forge mamba
+
 dependencies:
   - python=3.6
-  - amplify
