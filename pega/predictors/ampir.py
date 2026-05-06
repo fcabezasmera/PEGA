@@ -130,7 +130,7 @@ class AmpirMaturePredictor(BasePredictor):
     """
 
     name = "ampir_mature"
-    display_name = "AMPir (mature)"
+    display_name = "ampir (mature)"
     predictor_id = 3
     description = "SVM AMP predictor — mature peptide model (R/ampir)."
     category = "r"
@@ -163,7 +163,7 @@ class AmpirPrecursorPredictor(BasePredictor):
     """
 
     name = "ampir_precursor"
-    display_name = "AMPir (precursor)"
+    display_name = "ampir (precursor)"
     predictor_id = 4
     description = "SVM AMP predictor — precursor protein model (R/ampir)."
     category = "r"
