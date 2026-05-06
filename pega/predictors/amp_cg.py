@@ -112,8 +112,18 @@ class AMPCGPredictor(BasePredictor):
         if cls._model is not None:
             return cls._model, cls._tokenizer, cls._device
 
+        import logging
         import torch
         from transformers import AutoTokenizer
+        import transformers
+
+        # Suppress HuggingFace Hub and transformers informational output.
+        # The UNEXPECTED/MISSING keys in the load report are expected —
+        # lm_head keys come from the base ESM-2 and are unused;
+        # classifier keys are replaced by our custom head.
+        transformers.logging.set_verbosity_error()
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+        logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
 
         model_path = cls.models_dir() / "best_model.pth"
         if not model_path.exists():

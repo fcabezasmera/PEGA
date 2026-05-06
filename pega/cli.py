@@ -39,14 +39,18 @@ def _suppress_warnings() -> None:
     """Suppress TensorFlow, absl, and HuggingFace informational output."""
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["TOKENIZERS_PARALLELISM"]        = "false"
+    os.environ["HF_HUB_VERBOSITY"]              = "error"
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"]  = "1"
+    os.environ["TRANSFORMERS_VERBOSITY"]         = "error"
     import warnings
     import logging
     warnings.filterwarnings("ignore")
-    logging.getLogger("tensorflow").setLevel(logging.ERROR)
-    logging.getLogger("absl").setLevel(logging.ERROR)
-    logging.getLogger("transformers").setLevel(logging.ERROR)
-    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    for logger_name in (
+        "tensorflow", "absl", "transformers",
+        "huggingface_hub", "huggingface_hub.utils._http",
+    ):
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 def _fasta_stats(fasta_path: Path) -> dict:
