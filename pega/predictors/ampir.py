@@ -1,20 +1,29 @@
 """
 pega.predictors.ampir
 =====================
-ampir predictors — mature and precursor models (R package).
+ampir predictors — mature and precursor SVM models (R package).
+
+ampir uses two support vector machine classifiers:
+
+* ``"mature"``    — optimised for short mature peptides (< 60 amino acids).
+* ``"precursor"`` — optimised for full-length precursor proteins.
 
 Both predictors write a temporary R script, invoke ``Rscript``, and parse
-the CSV output.  Two separate classes are registered so that users can
-enable each model independently.
+the CSV output.  The output column ``prob_AMP`` is used as the score.
+
+Note: sequences shorter than 10 amino acids or containing non-standard
+amino acids receive ``NA`` for ``prob_AMP`` and are excluded from results.
 
 Installation
 ------------
-    install.packages("ampir")   # inside an R session
+    # inside pega_env (R is bundled via r-base):
+    Rscript -e 'install.packages("ampir", repos="https://cloud.r-project.org")'
 
 Reference
 ---------
-Fingerhut L. et al. (2021).  ampir: an R package for fast genome-wide
-prediction of antimicrobial peptides.  *Bioinformatics*, 36(21), 5262–5263.
+Fingerhut L. et al. (2021). ampir: an R package for fast genome-wide
+prediction of antimicrobial peptides. *Bioinformatics*, 36(21), 5262–5263.
+https://github.com/Legana/ampir
 """
 
 from __future__ import annotations
@@ -32,19 +41,19 @@ from pega.base import BasePredictor
 
 
 # ---------------------------------------------------------------------------
-# Shared logic
+# Shared R execution logic
 # ---------------------------------------------------------------------------
 
 
 def _run_ampir(fasta_path: Path, model_type: str) -> pd.DataFrame:
-    """Execute ampir in R and return the parsed results.
+    """Run ampir in R and return parsed results.
 
     Parameters
     ----------
     fasta_path:
         Validated path to the FASTA file.
     model_type:
-        Either ``"mature"`` or ``"precursor"``.
+        ``"mature"`` or ``"precursor"``.
 
     Returns
     -------
@@ -57,16 +66,17 @@ def _run_ampir(fasta_path: Path, model_type: str) -> pd.DataFrame:
         r_script_path = os.path.join(tmp_dir, f"ampir_{model_type}.R")
         csv_path = os.path.join(tmp_dir, f"ampir_{model_type}.csv")
 
+        # predict_amps() output columns: seq_name, seq_aa, prob_AMP
         r_code = f"""\
 library(ampir)
 seqs <- read_faa("{fasta_path}")
 preds <- predict_amps(seqs, model = "{model_type}")
-df <- as.data.frame(preds)
-df${score_col} <- df[, 3]
-df <- df[, c("seq_name", "{score_col}")]
+df <- data.frame(
+  seq_name = preds$seq_name,
+  {score_col} = preds$prob_AMP
+)
 write.csv(df, file = "{csv_path}", row.names = FALSE)
 """
-
         with open(r_script_path, "w") as f:
             f.write(r_code)
 
@@ -78,10 +88,7 @@ write.csv(df, file = "{csv_path}", row.names = FALSE)
         )
 
         with tqdm(
-            total=100,
-            desc=f"ampir ({model_type})",
-            unit="%",
-            leave=False,
+            total=100, desc=f"ampir ({model_type})", unit="%", leave=False
         ) as pbar:
             while process.poll() is None:
                 time.sleep(0.5)
@@ -91,19 +98,23 @@ write.csv(df, file = "{csv_path}", row.names = FALSE)
 
         returncode = process.wait()
         if returncode != 0:
-            stderr = process.stderr.read()
             raise RuntimeError(
-                f"ampir ({model_type}) failed with exit code {returncode}.\n"
-                f"R stderr: {stderr}"
+                f"ampir ({model_type}) failed (exit {returncode}).\n"
+                f"R stderr: {process.stderr.read()}\n"
+                "Check your R installation: "
+                "Rscript -e 'install.packages(\"ampir\")'"
             )
 
         if not os.path.exists(csv_path):
             raise RuntimeError(
-                f"ampir ({model_type}) did not produce output.  "
+                f"ampir ({model_type}) did not produce output. "
                 "Check your R and ampir installation."
             )
 
-        return pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path)
+
+    # Drop sequences where ampir returned NA (< 10 aa or non-standard aa).
+    return df.dropna(subset=[score_col]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -112,14 +123,15 @@ write.csv(df, file = "{csv_path}", row.names = FALSE)
 
 
 class AmpirMaturePredictor(BasePredictor):
-    """ampir mature-peptide model (logistic regression, R).
+    """ampir SVM predictor — mature peptide model.
 
-    Requires R (>= 4.0) with the ``ampir`` package installed.
+    Best suited for short mature peptides (< 60 amino acids).
+    Requires R with the ``ampir`` package installed inside ``pega_env``.
     """
 
     name = "ampir_mature"
     predictor_id = 3
-    description = "Logistic regression AMP predictor — mature peptide model (R/ampir)."
+    description = "SVM AMP predictor — mature peptide model (R/ampir)."
     category = "r"
 
     @classmethod
@@ -134,8 +146,7 @@ class AmpirMaturePredictor(BasePredictor):
         pandas.DataFrame
             Columns: ``["seq_name", "ampir_mature_score"]``.
         """
-        fasta_path = self._validate_fasta(fasta_path)
-        return _run_ampir(fasta_path, model_type="mature")
+        return _run_ampir(self._validate_fasta(fasta_path), model_type="mature")
 
 
 # ---------------------------------------------------------------------------
@@ -144,14 +155,15 @@ class AmpirMaturePredictor(BasePredictor):
 
 
 class AmpirPrecursorPredictor(BasePredictor):
-    """ampir precursor-peptide model (logistic regression, R).
+    """ampir SVM predictor — precursor protein model.
 
-    Requires R (>= 4.0) with the ``ampir`` package installed.
+    Best suited for full-length precursor protein sequences.
+    Requires R with the ``ampir`` package installed inside ``pega_env``.
     """
 
     name = "ampir_precursor"
     predictor_id = 4
-    description = "Logistic regression AMP predictor — precursor peptide model (R/ampir)."
+    description = "SVM AMP predictor — precursor protein model (R/ampir)."
     category = "r"
 
     @classmethod
@@ -166,5 +178,4 @@ class AmpirPrecursorPredictor(BasePredictor):
         pandas.DataFrame
             Columns: ``["seq_name", "ampir_precursor_score"]``.
         """
-        fasta_path = self._validate_fasta(fasta_path)
-        return _run_ampir(fasta_path, model_type="precursor")
+        return _run_ampir(self._validate_fasta(fasta_path), model_type="precursor")
