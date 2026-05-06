@@ -7,12 +7,19 @@ Main scoring orchestrator for PEGA.
 from __future__ import annotations
 
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
 
 from pega.registry import registry
+
+
+def _progress(current: int, total: int, name: str, elapsed: float | None = None) -> None:
+    """Print a simple [X/Y] progress line."""
+    time_str = f"  {elapsed:.1f}s" if elapsed is not None else ""
+    print(f"  [{current:>{len(str(total))}/{total}]  {name}{time_str}")
 
 
 def calculate_scores(
@@ -35,14 +42,11 @@ def calculate_scores(
     jobs:
         Parallel workers (``-1`` = all CPU threads, default ``1``).
     validate:
-        If ``True``, validate sequences before scoring and warn about
-        non-canonical amino acids, short sequences, etc.
+        If ``True``, validate sequences before scoring.
     """
     fasta_path = Path(fasta_path)
     if not fasta_path.exists():
-        raise FileNotFoundError(
-            f"FASTA file not found: {fasta_path}"
-        )
+        raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
 
     # ------------------------------------------------------------------
     # Optional sequence validation
@@ -64,11 +68,7 @@ def calculate_scores(
         for name in predictor_names:
             cls = registry.get(name)
             if not cls.is_available():
-                print(
-                    f"  [warning] '{cls.display_name}' is not available "
-                    "and will be skipped.",
-                    file=sys.stderr,
-                )
+                print(f"  [skip] '{cls.display_name}' is not available.", file=sys.stderr)
                 continue
             predictor_classes.append(cls)
     else:
@@ -80,6 +80,8 @@ def calculate_scores(
             "Run 'PEGA list' to see which predictors are installed."
         )
 
+    total = len(predictor_classes)
+
     # ------------------------------------------------------------------
     # Run predictors
     # ------------------------------------------------------------------
@@ -89,36 +91,50 @@ def calculate_scores(
     dfs: dict[str, pd.DataFrame] = {}
     errors: dict[str, str] = {}
 
-    def _run(cls):
-        print(f"  Running {cls.display_name} (predictor {cls.predictor_id})...")
-        return cls.name, cls().score(fasta_path)
-
     if max_workers == 1:
-        for cls in predictor_classes:
+        # Sequential — clean ordered output
+        for i, cls in enumerate(predictor_classes, 1):
+            _progress(i, total, cls.display_name)
+            t0 = time.perf_counter()
             try:
-                name, df = _run(cls)
-                dfs[name] = df
+                dfs[cls.name] = cls().score(fasta_path)
             except Exception as exc:  # noqa: BLE001
                 errors[cls.display_name] = str(exc)
+                elapsed = time.perf_counter() - t0
                 print(
-                    f"  [warning] {cls.display_name} failed and will be "
-                    f"excluded: {exc}",
+                    f"  [warning] {cls.display_name} failed "
+                    f"({elapsed:.1f}s): {exc}",
                     file=sys.stderr,
                 )
+
     else:
-        print(f"  Running {len(predictor_classes)} predictors "
-              f"with {max_workers} parallel workers...")
+        # Parallel — show results as they complete
+        print(f"  Running {total} predictors with {max_workers} parallel workers...")
+        print()
+
+        completed = 0
+
+        def _run(cls):
+            t0 = time.perf_counter()
+            result = cls().score(fasta_path)
+            return cls.name, result, time.perf_counter() - t0
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(_run, cls): cls for cls in predictor_classes}
             for future in as_completed(futures):
                 cls = futures[future]
+                completed += 1
                 try:
-                    name, df = future.result()
+                    name, df, elapsed = future.result()
                     dfs[name] = df
+                    _progress(completed, total, f"{cls.display_name} ✓", elapsed)
                 except Exception as exc:  # noqa: BLE001
                     errors[cls.display_name] = str(exc)
-                    print(f"  [warning] {cls.display_name} failed: {exc}",
-                          file=sys.stderr)
+                    _progress(completed, total, f"{cls.display_name} ✗")
+                    print(
+                        f"       {cls.display_name} failed: {exc}",
+                        file=sys.stderr,
+                    )
 
     if not dfs:
         raise RuntimeError("All predictors failed. Check the error messages above.")
@@ -137,9 +153,9 @@ def calculate_scores(
     if export_tsv is not None:
         out_path = Path(export_tsv)
         merged.to_csv(out_path, sep="\t", index=False)
-        print(f"  Results saved to: {out_path}")
+        print(f"\n  Saved → {out_path}")
 
     if errors:
-        print(f"\n  Predictors excluded due to errors: {', '.join(errors)}")
+        print(f"\n  Failed: {', '.join(errors)}")
 
     return merged

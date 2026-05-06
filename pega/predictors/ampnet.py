@@ -19,6 +19,16 @@ Reference
 Please cite the original AMPnet publication when using this predictor.
 """
 
+# Suppress TensorFlow C++ and absl warnings before TF is imported.
+# setdefault is used so that user-defined env vars are respected.
+import os as _os
+import logging as _logging
+
+_os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+_os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+_logging.getLogger("absl").setLevel(_logging.ERROR)
+_logging.getLogger("tensorflow").setLevel(_logging.ERROR)
+
 from __future__ import annotations
 
 import logging
