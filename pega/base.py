@@ -7,9 +7,9 @@ Adding a new predictor
 ----------------------
 1. Create a module in ``pega/predictors/``.
 2. Define a class that inherits from ``BasePredictor``.
-3. Set the four required class attributes.
+3. Set the five required class attributes.
 4. Implement ``is_available()`` and ``score()``.
-5. The registry discovers it automatically — no other changes needed.
+5. The registry discovers it automatically.
 """
 
 from __future__ import annotations
@@ -31,38 +31,35 @@ class BasePredictor(abc.ABC):
     name : str
         Short lowercase identifier used in CLI and output column headers.
         Must be unique (e.g. ``"ampnet"``).
+    display_name : str
+        Human-readable name shown in ``PEGA list`` and log messages
+        (e.g. ``"AMPnet"``).
     predictor_id : int
-        Stable integer identifier (1–99) used for sorting and references.
+        Stable integer identifier (1–99).
     description : str
-        One-sentence description shown by ``pega list``.
+        One-sentence description shown by ``PEGA list``.
     category : {"pip", "r", "conda"}
         How the predictor's external dependency is installed.
     """
 
     name: ClassVar[str]
+    display_name: ClassVar[str]
     predictor_id: ClassVar[int]
     description: ClassVar[str]
     category: ClassVar[str]
 
-    # ------------------------------------------------------------------
-    # Derived helpers
-    # ------------------------------------------------------------------
-
     @classmethod
     def score_column(cls) -> str:
-        """Return the score column name produced by this predictor.
-
-        By convention: ``"{name}_score"`` (e.g. ``"ampnet_score"``).
-        """
+        """Return the score column name: ``"{name}_score"``."""
         return f"{cls.name}_score"
 
     @staticmethod
     def models_dir() -> Path:
-        """Return the absolute path to the bundled ``pega/models/`` directory."""
+        """Return the path to the bundled ``pega/models/`` directory."""
         return Path(__file__).resolve().parent / "models"
 
     # ------------------------------------------------------------------
-    # Availability check
+    # Availability
     # ------------------------------------------------------------------
 
     @classmethod
@@ -70,21 +67,7 @@ class BasePredictor(abc.ABC):
     def is_available(cls) -> bool:
         """Return ``True`` if all runtime dependencies are satisfied.
 
-        Must never raise — return ``False`` on any missing dependency.
-        Must be fast: no network access, no large imports.
-
-        Recommended pattern for pip dependencies::
-
-            @classmethod
-            def is_available(cls) -> bool:
-                try:
-                    import tensorflow  # noqa: F401
-                    return True
-                except ImportError:
-                    return False
-
-        For executables (R, conda tools) use :meth:`_executable_on_path`.
-        For R packages use :meth:`_r_package_installed`.
+        Must never raise. Must be fast (no network access, no large imports).
         """
 
     # ------------------------------------------------------------------
@@ -95,29 +78,15 @@ class BasePredictor(abc.ABC):
     def score(self, fasta_path: str | Path) -> pd.DataFrame:
         """Score all sequences in a FASTA file.
 
-        Parameters
-        ----------
-        fasta_path:
-            Path to a FASTA file with standard single-letter amino acid codes.
-
         Returns
         -------
         pandas.DataFrame
             Two columns: ``["seq_name", "<name>_score"]``.
-            Scores are in ``[0, 1]`` — higher means more likely AMP.
-
-        Raises
-        ------
-        FileNotFoundError
-            If ``fasta_path`` does not exist.
-        ValueError
-            If the file is empty or contains no valid sequences.
-        RuntimeError
-            If the underlying model or external tool fails.
+            Scores are in ``[0, 1]``.
         """
 
     # ------------------------------------------------------------------
-    # Shared helpers available to all subclasses
+    # Shared helpers
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -127,31 +96,25 @@ class BasePredictor(abc.ABC):
 
     @staticmethod
     def _r_package_installed(package: str) -> bool:
-        """Return ``True`` if an R package is installed.
-
-        Parameters
-        ----------
-        package:
-            Name of the R package (e.g. ``"ampir"``).
-        """
-        if shutil.which("Rscript") is None:
+        """Return ``True`` if an R package is installed inside pega_env."""
+        # Use the conda environment's Rscript if available
+        import os
+        conda_prefix = os.environ.get("CONDA_PREFIX", "")
+        rscript = os.path.join(conda_prefix, "bin", "Rscript") if conda_prefix else ""
+        if not rscript or not Path(rscript).exists():
+            rscript = shutil.which("Rscript") or ""
+        if not rscript:
             return False
         result = subprocess.run(
-            [
-                "Rscript", "-e",
-                f'if (!requireNamespace("{package}", quietly=TRUE)) quit(status=1)',
-            ],
+            [rscript, "-e",
+             f'if (!requireNamespace("{package}", quietly=TRUE)) quit(status=1)'],
             capture_output=True,
         )
         return result.returncode == 0
 
     @staticmethod
     def _validate_fasta(fasta_path: str | Path) -> Path:
-        """Check that a FASTA file exists and is non-empty.
-
-        Returns the resolved ``Path`` or raises ``FileNotFoundError`` /
-        ``ValueError``.
-        """
+        """Validate that a FASTA file exists, is non-empty, and is pure ASCII."""
         path = Path(fasta_path).resolve()
         if not path.exists():
             raise FileNotFoundError(
@@ -159,26 +122,26 @@ class BasePredictor(abc.ABC):
                 "Please verify the path and try again."
             )
         if path.stat().st_size == 0:
+            raise ValueError(f"FASTA file is empty: {path}")
+        try:
+            path.read_text(encoding="ascii")
+        except UnicodeDecodeError as exc:
             raise ValueError(
-                f"FASTA file is empty: {path}\n"
-                "The file must contain at least one sequence."
-            )
+                f"FASTA file contains non-ASCII characters: {path}\n"
+                f"Detail: {exc}\n"
+                "All headers and sequences must use standard ASCII characters."
+            ) from exc
         return path
-
-    # ------------------------------------------------------------------
-    # Dunder
-    # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
         status = "available" if self.is_available() else "unavailable"
-        return f"<{self.__class__.__name__} id={self.predictor_id} [{status}]>"
+        return f"<{self.display_name} id={self.predictor_id} [{status}]>"
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        """Validate required class attributes on concrete subclasses."""
         super().__init_subclass__(**kwargs)
         if abc.ABC in cls.__bases__:
             return
-        required = ("name", "predictor_id", "description", "category")
+        required = ("name", "display_name", "predictor_id", "description", "category")
         missing = [a for a in required if not hasattr(cls, a)]
         if missing:
             raise TypeError(

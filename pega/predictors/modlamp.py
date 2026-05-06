@@ -71,6 +71,7 @@ class ModlampRFPredictor(BasePredictor):
     """
 
     name = "modlamp_rf"
+    display_name = "modlAMP RF"
     predictor_id = 9
     description = "Random Forest on PepCATS cross-correlation descriptors (modlAMP)."
     category = "pip"
@@ -152,6 +153,7 @@ class ModlampSVMPredictor(BasePredictor):
     """
 
     name = "modlamp_svm"
+    display_name = "modlAMP SVM"
     predictor_id = 10
     description = "Support Vector Machine on PepCATS cross-correlation descriptors (modlAMP)."
     category = "pip"

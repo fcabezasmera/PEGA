@@ -99,6 +99,7 @@ class AmplifyBalancedPredictor(BasePredictor):
     """AMPlify balanced model (conda)."""
 
     name = "amplify_balanced"
+    display_name = "AMPlify (balanced)"
     predictor_id = 7
     description = "Deep learning AMP predictor — balanced model (AMPlify / conda)."
     category = "conda"
@@ -128,6 +129,7 @@ class AmplifyImbalancedPredictor(BasePredictor):
     """AMPlify imbalanced model (conda)."""
 
     name = "amplify_imbalanced"
+    display_name = "AMPlify (imbalanced)"
     predictor_id = 8
     description = "Deep learning AMP predictor — imbalanced model (AMPlify / conda)."
     category = "conda"

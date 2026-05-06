@@ -64,6 +64,7 @@ class AMPnetPredictor(BasePredictor):
     """
 
     name = "ampnet"
+    display_name = "AMPnet"
     predictor_id = 1
     description = "Convolutional neural network trained on AMP/non-AMP sequences (TensorFlow)."
     category = "pip"

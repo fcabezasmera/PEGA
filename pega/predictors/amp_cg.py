@@ -88,6 +88,7 @@ class AMPCGPredictor(BasePredictor):
     """
 
     name = "amp_cg"
+    display_name = "AMP_CG"
     predictor_id = 5
     description = "ESM-2 protein language model fine-tuned for AMP classification (PyTorch)."
     category = "pip"
