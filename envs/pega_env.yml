@@ -1,0 +1,35 @@
+name: pega_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # Python — 3.10 for full TensorFlow + PyTorch compatibility
+  - python=3.10
+
+  # Core
+  - numpy>=1.24
+  - pandas>=2.0
+  - biopython>=1.81
+  - tqdm>=4.65
+  - requests>=2.31
+
+  # Deep learning predictors (AMPnet, AMP-CG)
+  - tensorflow>=2.13
+  - pytorch>=2.0
+  - transformers>=4.35
+
+  # modlAMP predictors (RF, SVM)
+  - scikit-learn>=1.3
+  - joblib>=1.3
+
+  # Package tooling
+  - pip
+  - setuptools>=61
+  - wheel
+
+  - pip:
+      - modlamp>=4.3
+      - ampep          # amPEPpy
+      - pega-amp       # install PEGA itself (or use: pip install -e .)

@@ -88,6 +88,25 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup(args: argparse.Namespace) -> int:
+    """Handle: pega setup"""
+    from pega.setup_envs import print_status, setup_all
+
+    print(_BANNER)
+
+    if args.status:
+        print("Environment status:\n")
+        print_status()
+        return 0
+
+    setup_all(
+        envs=args.envs if args.envs else None,
+        include_r=not args.no_r,
+        force=args.force,
+    )
+    return 0
+
+
 def cmd_download_models(args: argparse.Namespace) -> int:
     """Handle: pega download-models"""
     from pega.download_models import download_models
@@ -206,6 +225,48 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Re-download model files even if they already exist.",
     )
 
+    # -- setup ---------------------------------------------------------------
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Create conda environments required by PEGA predictors.",
+        description=(
+            "Create the conda environments needed by PEGA predictors and,\n"
+            "optionally, install the R ampir package.\n\n"
+            "Environments created:\n"
+            "  pega_env     — main environment (TensorFlow, PyTorch, modlAMP)\n"
+            "  macrel_env   — Macrel predictor\n"
+            "  amplify_env  — AMPlify predictor\n"
+        ),
+    )
+    setup_parser.add_argument(
+        "--envs",
+        nargs="+",
+        metavar="NAME",
+        help=(
+            "Names of specific environments to create "
+            "(e.g. --envs macrel_env amplify_env).  "
+            "Default: all three."
+        ),
+    )
+    setup_parser.add_argument(
+        "--no-r",
+        action="store_true",
+        default=False,
+        help="Skip the R / ampir installation step.",
+    )
+    setup_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Remove and recreate environments that already exist.",
+    )
+    setup_parser.add_argument(
+        "--status",
+        action="store_true",
+        default=False,
+        help="Show the current status of all environments without installing anything.",
+    )
+
     return parser
 
 
@@ -216,6 +277,7 @@ def _build_parser() -> argparse.ArgumentParser:
 _HANDLERS = {
     "list": cmd_list,
     "score": cmd_score,
+    "setup": cmd_setup,
     "download-models": cmd_download_models,
 }
 
