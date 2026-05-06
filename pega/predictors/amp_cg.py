@@ -1,14 +1,9 @@
 """
 pega.predictors.amp_cg
 ======================
-AMP-CG predictor — ESM-2 protein language model fine-tuned for AMP classification
-(PyTorch + HuggingFace Transformers).
+AMP-CG predictor — ESM-2 fine-tuned for AMP classification (PyTorch).
 
-Model
------
-A custom classification head on top of the ESM-2 (8M parameter) encoder
-from Meta AI.  The backbone is loaded from HuggingFace Hub on first use;
-the classification head weights are loaded from disk.
+Architecture and inference logic adapted from the original PEGA implementation.
 
 Pre-trained weights
 -------------------
@@ -38,12 +33,13 @@ _CHECKPOINT = "facebook/esm2_t6_8M_UR50D"
 
 
 # ---------------------------------------------------------------------------
-# Model definition (mirrors the original architecture)
+# Model definition — matches the original PEGA architecture exactly
 # ---------------------------------------------------------------------------
 
 
-def _build_model():
-    """Instantiate the AMP-CG model architecture."""
+def _build_model(device):
+    """Build the AMP-CG model architecture."""
+    import torch
     import torch.nn as nn
     from transformers import AutoModelForSequenceClassification
 
@@ -63,16 +59,18 @@ def _build_model():
             self.output_layer = nn.Linear(64, 2)
             self.dropout = nn.Dropout(0.0)
 
-        def forward(self, input_ids, attention_mask):
-            out = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-            x = out.logits
-            x = self.relu(self.bn1(self.fc1(x)))
-            x = self.dropout(x)
-            x = self.relu(self.bn2(self.fc2(x)))
-            x = self.dropout(x)
-            x = self.relu(self.bn3(self.fc3(x)))
-            x = self.dropout(x)
-            return self.output_layer(x)
+        def forward(self, x):
+            with torch.no_grad():
+                bert_output = self.bert(
+                    input_ids=x["input_ids"].to(device),
+                    attention_mask=x["attention_mask"].to(device),
+                )
+            out = self.dropout(bert_output["logits"])
+            out = self.relu(self.bn1(self.fc1(out)))
+            out = self.relu(self.bn2(self.fc2(out)))
+            out = self.relu(self.bn3(self.fc3(out)))
+            out = self.output_layer(out)
+            return torch.softmax(out, dim=1)
 
     return AMPCGModel()
 
@@ -83,11 +81,10 @@ def _build_model():
 
 
 class AMPCGPredictor(BasePredictor):
-    """ESM-2 transformer-based AMP predictor (PyTorch + HuggingFace).
+    """ESM-2 transformer AMP predictor (PyTorch + HuggingFace).
 
-    Requires ``torch`` and ``transformers`` packages, and the pre-trained
-    classification head ``pega/models/best_model.pth``.
-    Run ``pega download-models`` to obtain the model weights.
+    Requires ``torch`` and ``transformers`` packages and
+    ``pega/models/best_model.pth``.
     """
 
     name = "amp_cg"
@@ -110,7 +107,7 @@ class AMPCGPredictor(BasePredictor):
 
     @classmethod
     def _load(cls):
-        """Load tokenizer and model from disk (once per process)."""
+        """Load tokenizer and model (once per process)."""
         if cls._model is not None:
             return cls._model, cls._tokenizer, cls._device
 
@@ -127,22 +124,31 @@ class AMPCGPredictor(BasePredictor):
         cls._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         cls._tokenizer = AutoTokenizer.from_pretrained(_CHECKPOINT)
 
-        model = _build_model()
-        state = torch.load(str(model_path), map_location=cls._device)
-        model.load_state_dict(state)
+        model = _build_model(cls._device)
+        state = torch.load(str(model_path), map_location=cls._device, weights_only=False)
+        model.load_state_dict(state, strict=False)
         model.to(cls._device)
         model.eval()
         cls._model = model
 
         return cls._model, cls._tokenizer, cls._device
 
-    def score(self, fasta_path: str | Path) -> pd.DataFrame:
-        """Score sequences with the AMP-CG ESM-2 model.
+    def score(
+        self,
+        fasta_path: str | Path,
+        max_len: int = 198,
+        batch_size: int = 64,
+    ) -> pd.DataFrame:
+        """Score sequences with the AMP-CG model.
 
         Parameters
         ----------
         fasta_path:
             Path to the input FASTA file.
+        max_len:
+            Maximum tokenisation length (default 198).
+        batch_size:
+            Number of sequences per inference batch (default 64).
 
         Returns
         -------
@@ -150,40 +156,35 @@ class AMPCGPredictor(BasePredictor):
             Columns: ``["seq_name", "amp_cg_score"]``.
         """
         import torch
-        import torch.nn.functional as F
 
         fasta_path = self._validate_fasta(fasta_path)
         model, tokenizer, device = self._load()
 
-        records = list(SeqIO.parse(str(fasta_path), "fasta"))
+        with tqdm(desc="Loading sequences", unit=" seqs") as pbar:
+            records = [(r.id, str(r.seq)) for r in SeqIO.parse(str(fasta_path), "fasta")]
+            pbar.update(len(records))
+
         if not records:
             raise ValueError(f"No sequences found in {fasta_path}.")
 
-        names: list[str] = []
-        scores: list[float] = []
+        ids, seqs = zip(*records)
+        total_batches = (len(seqs) + batch_size - 1) // batch_size
+        all_probs: list[float] = []
 
-        with tqdm(total=len(records), desc="AMP-CG", unit="seq") as pbar:
-            for record in records:
-                seq = str(record.seq).upper()
-                inputs = tokenizer(
-                    seq,
-                    return_tensors="pt",
-                    padding=True,
+        with tqdm(total=total_batches, desc="AMP-CG", unit=" batch") as pbar:
+            for i in range(0, len(seqs), batch_size):
+                batch = list(seqs[i : i + batch_size])
+                enc = tokenizer(
+                    batch,
+                    max_length=max_len,
+                    padding="max_length",
                     truncation=True,
-                    max_length=512,
+                    return_tensors="pt",
                 )
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-
                 with torch.no_grad():
-                    logits = model(
-                        input_ids=inputs["input_ids"],
-                        attention_mask=inputs["attention_mask"],
-                    )
-                    prob = F.softmax(logits, dim=1)
-                    # Index 1 = AMP class
-                    scores.append(float(prob[0, 1].cpu()))
-
-                names.append(record.id)
+                    preds = model(enc)
+                    probs = preds.cpu().numpy()[:, 1].tolist()
+                all_probs.extend(probs)
                 pbar.update(1)
 
-        return pd.DataFrame({"seq_name": names, "amp_cg_score": scores})
+        return pd.DataFrame({"seq_name": list(ids), "amp_cg_score": all_probs})

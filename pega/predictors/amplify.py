@@ -1,20 +1,30 @@
 """
 pega.predictors.amplify
 =======================
-AMPlify predictors — balanced and imbalanced deep learning models (conda).
+AMPlify predictors — balanced and imbalanced models (conda).
 
-Both predictors invoke the ``AMPlify`` command-line tool inside its conda
-environment and parse the TSV output file.
+AMPlify writes output TSV files to the current working directory.
+PEGA runs it in a temporary directory and parses column 4 (0-indexed)
+as the score, matching the original PEGA implementation.
+
+Output file columns (0-indexed)
+--------------------------------
+0  seq_name
+1  sequence
+2  log-scaled score
+3  AMP / non-AMP label
+4  probability score   ← used by PEGA
 
 Installation
 ------------
-    conda create -n amplify_env -c bioconda amplify
+    conda create -n amplify_env python=3.6 -y
+    conda activate amplify_env
+    mamba install bioconda::amplify
 
 Reference
 ---------
-Li C. et al. (2022).  AMPlify: attentive deep learning model for discovery
-of novel antimicrobial peptides effective against WHO priority pathogens.
-*BMC Genomics*, 23, 77.
+Li C. et al. (2022). AMPlify. *BMC Genomics*, 23, 77.
+https://github.com/BirolLab/AMPlify
 """
 
 from __future__ import annotations
@@ -23,37 +33,17 @@ import glob
 import os
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pandas as pd
-from tqdm import tqdm
 
 from pega.base import BasePredictor
 
 _CONDA_ENV = "amplify_env"
 
 
-# ---------------------------------------------------------------------------
-# Shared logic
-# ---------------------------------------------------------------------------
-
-
 def _run_amplify(fasta_path: Path, model_type: str) -> pd.DataFrame:
-    """Execute AMPlify and return parsed results.
-
-    Parameters
-    ----------
-    fasta_path:
-        Validated path to the FASTA file.
-    model_type:
-        Either ``"balanced"`` or ``"imbalanced"``.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Columns: ``["seq_name", "amplify_{model_type}_score"]``.
-    """
+    """Run AMPlify in a temporary directory and return parsed results."""
     score_col = f"amplify_{model_type}_score"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -64,72 +54,49 @@ def _run_amplify(fasta_path: Path, model_type: str) -> pd.DataFrame:
         if model_type == "imbalanced":
             cmd += ["-m", "imbalanced"]
 
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=tmp_dir,
-        )
-
-        with tqdm(
-            total=100,
-            desc=f"AMPlify ({model_type})",
-            unit="%",
-            leave=False,
-        ) as pbar:
-            while process.poll() is None:
-                time.sleep(0.5)
-                if pbar.n < 90:
-                    pbar.update(2)
-            pbar.update(100 - pbar.n)
-
-        returncode = process.wait()
-        if returncode != 0:
-            stderr = process.stderr.read()
-            raise RuntimeError(
-                f"AMPlify ({model_type}) failed with exit code {returncode}.\n"
-                f"stderr: {stderr}"
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=tmp_dir,           # AMPlify writes output files here
             )
-
-        pattern = os.path.join(tmp_dir, f"AMPlify_{model_type}_results_*.tsv")
-        result_files = glob.glob(pattern)
-        if not result_files:
-            # Fallback: any TSV in the directory.
-            result_files = glob.glob(os.path.join(tmp_dir, "*.tsv"))
-
-        if not result_files:
+        except subprocess.CalledProcessError as exc:
             raise RuntimeError(
-                f"AMPlify ({model_type}) did not produce an output file.  "
+                f"AMPlify ({model_type}) failed (exit {exc.returncode}).\n"
+                f"{exc.stderr.decode(errors='replace')}"
+            ) from exc
+
+        # AMPlify writes: AMPlify_{model_type}_results_<timestamp>.tsv
+        pattern = os.path.join(tmp_dir, f"AMPlify_{model_type}_results_*.tsv")
+        matching = glob.glob(pattern)
+        if not matching:
+            # Fallback: balanced uses 'balanced' in name regardless
+            pattern = os.path.join(tmp_dir, "AMPlify_balanced_results_*.tsv")
+            matching = glob.glob(pattern)
+
+        if not matching:
+            raise FileNotFoundError(
+                f"AMPlify ({model_type}) produced no output file. "
                 "Check your AMPlify installation."
             )
 
-        result_file = max(result_files, key=os.path.getctime)
-        raw = pd.read_csv(result_file, sep="\t", skiprows=1, header=None)
+        output_file = max(matching, key=os.path.getctime)
 
-    # AMPlify output columns: sequence_ID, sequence, score, prediction.
-    raw.columns = [f"col_{i}" for i in range(raw.shape[1])]
-    scores = pd.to_numeric(raw["col_2"], errors="coerce")
-    valid = scores.notna()
+        # Columns (0-indexed): 0=seq_name, 1=seq, 2=log_score, 3=label, 4=prob
+        raw = pd.read_csv(output_file, sep="\t", skiprows=1, header=None)
+        raw[4] = pd.to_numeric(raw[4], errors="coerce")
+        raw = raw[raw[4].notnull()]
 
-    return pd.DataFrame(
-        {
-            "seq_name": raw.loc[valid, "col_0"].astype(str).values,
-            score_col: scores[valid].values,
-        }
-    ).reset_index(drop=True)
-
-
-# ---------------------------------------------------------------------------
-# Balanced model
-# ---------------------------------------------------------------------------
+    return pd.DataFrame({
+        "seq_name": raw[0].astype(str).values,
+        score_col: raw[4].values,
+    }).reset_index(drop=True)
 
 
 class AmplifyBalancedPredictor(BasePredictor):
-    """AMPlify deep learning predictor — balanced training dataset (conda).
-
-    Requires a conda environment named ``amplify_env`` with AMPlify installed.
-    """
+    """AMPlify balanced model (conda)."""
 
     name = "amplify_balanced"
     predictor_id = 7
@@ -147,27 +114,18 @@ class AmplifyBalancedPredictor(BasePredictor):
         return result.returncode == 0
 
     def score(self, fasta_path: str | Path) -> pd.DataFrame:
-        """Score sequences with AMPlify (balanced model).
+        """Score with AMPlify balanced model.
 
         Returns
         -------
         pandas.DataFrame
             Columns: ``["seq_name", "amplify_balanced_score"]``.
         """
-        fasta_path = self._validate_fasta(fasta_path)
-        return _run_amplify(fasta_path, model_type="balanced")
-
-
-# ---------------------------------------------------------------------------
-# Imbalanced model
-# ---------------------------------------------------------------------------
+        return _run_amplify(self._validate_fasta(fasta_path), "balanced")
 
 
 class AmplifyImbalancedPredictor(BasePredictor):
-    """AMPlify deep learning predictor — imbalanced training dataset (conda).
-
-    Requires a conda environment named ``amplify_env`` with AMPlify installed.
-    """
+    """AMPlify imbalanced model (conda)."""
 
     name = "amplify_imbalanced"
     predictor_id = 8
@@ -185,12 +143,11 @@ class AmplifyImbalancedPredictor(BasePredictor):
         return result.returncode == 0
 
     def score(self, fasta_path: str | Path) -> pd.DataFrame:
-        """Score sequences with AMPlify (imbalanced model).
+        """Score with AMPlify imbalanced model.
 
         Returns
         -------
         pandas.DataFrame
             Columns: ``["seq_name", "amplify_imbalanced_score"]``.
         """
-        fasta_path = self._validate_fasta(fasta_path)
-        return _run_amplify(fasta_path, model_type="imbalanced")
+        return _run_amplify(self._validate_fasta(fasta_path), "imbalanced")
