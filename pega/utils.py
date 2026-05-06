@@ -108,9 +108,16 @@ def calculate_scores(
                 )
 
     else:
-        # Parallel — disable individual tqdm bars to keep output clean
-        import os
-        os.environ["TQDM_DISABLE"] = "1"
+        # Parallel — monkey-patch tqdm to disable all progress bars,
+        # keeping only our [X/Y] progress lines clean.
+        import tqdm as _tqdm_module
+        _orig_tqdm_init = _tqdm_module.tqdm.__init__
+
+        def _silent_init(self, *args, **kwargs):
+            kwargs["disable"] = True
+            _orig_tqdm_init(self, *args, **kwargs)
+
+        _tqdm_module.tqdm.__init__ = _silent_init
 
         print(f"  Running {total} predictors with {max_workers} parallel workers...")
         print()
@@ -122,21 +129,23 @@ def calculate_scores(
             result = cls().score(fasta_path)
             return cls.name, result, time.perf_counter() - t0
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_run, cls): cls for cls in predictor_classes}
-            for future in as_completed(futures):
-                cls = futures[future]
-                completed += 1
-                try:
-                    name, df, elapsed = future.result()
-                    dfs[name] = df
-                    _progress(completed, total, f"{cls.display_name} ✓", elapsed)
-                except Exception as exc:  # noqa: BLE001
-                    errors[cls.display_name] = str(exc)
-                    _progress(completed, total, f"{cls.display_name} ✗")
-                    print(f"       {cls.display_name} failed: {exc}", file=sys.stderr)
-
-        os.environ.pop("TQDM_DISABLE", None)
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_run, cls): cls for cls in predictor_classes}
+                for future in as_completed(futures):
+                    cls = futures[future]
+                    completed += 1
+                    try:
+                        name, df, elapsed = future.result()
+                        dfs[name] = df
+                        _progress(completed, total, f"{cls.display_name} ✓", elapsed)
+                    except Exception as exc:  # noqa: BLE001
+                        errors[cls.display_name] = str(exc)
+                        _progress(completed, total, f"{cls.display_name} ✗")
+                        print(f"       {cls.display_name} failed: {exc}", file=sys.stderr)
+        finally:
+            # Always restore tqdm to normal behaviour.
+            _tqdm_module.tqdm.__init__ = _orig_tqdm_init
 
     if not dfs:
         raise RuntimeError("All predictors failed. Check the error messages above.")

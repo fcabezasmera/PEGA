@@ -6,8 +6,13 @@ Command-line interface for PEGA.py.
 
 from __future__ import annotations
 
-import argparse
 import os
+
+# Must be set BEFORE tensorflow is imported anywhere in this process.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+
+import argparse
 import sys
 from pathlib import Path
 
