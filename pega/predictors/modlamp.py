@@ -126,7 +126,6 @@ class ModlampRFPredictor(BasePredictor):
         names = [r.id for r in records]
         sequences = [str(r.seq).upper() for r in records]
 
-        print("  Computing PepCATS descriptors (RF)...")
         features = _compute_descriptors(sequences)
 
         scores: list[float] = []
@@ -208,7 +207,6 @@ class ModlampSVMPredictor(BasePredictor):
         names = [r.id for r in records]
         sequences = [str(r.seq).upper() for r in records]
 
-        print("  Computing PepCATS descriptors (SVM)...")
         features = _compute_descriptors(sequences)
 
         scores: list[float] = []

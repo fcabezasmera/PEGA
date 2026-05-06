@@ -101,15 +101,6 @@ def cmd_score(args: argparse.Namespace) -> int:
 
     if not args.quiet:
         print(_BANNER)
-        stats = _fasta_stats(fasta)
-        print(f"  Input      : {fasta.name}")
-        print(f"  Sequences  : {stats['n']}  "
-              f"(len: {stats['min_len']}–{stats['max_len']}, avg {stats['avg_len']})")
-        print(f"  Predictors : {'all available' if predictors is None else ', '.join(predictors)}")
-        print(f"  Jobs       : {args.jobs}")
-        if args.out:
-            print(f"  Output     : {args.out}")
-        print()
 
     try:
         df = calculate_scores(
@@ -117,6 +108,7 @@ def cmd_score(args: argparse.Namespace) -> int:
             predictor_names=predictors,
             export_tsv=args.out,
             jobs=args.jobs,
+            quiet=args.quiet,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -131,7 +123,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     from pega.preprocess.validator import validate_fasta
     if not args.quiet:
         print(_BANNER)
-    ok = validate_fasta(Path(args.fasta), verbose=True)
+    ok, _ = validate_fasta(Path(args.fasta), verbose=True)
     return 0 if ok else 1
 
 

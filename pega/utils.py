@@ -17,7 +17,6 @@ from pega.registry import registry
 
 
 def _progress(current: int, total: int, name: str, elapsed: float | None = None) -> None:
-    """Print a simple [X/Y] progress line."""
     width = len(str(total))
     time_str = f"  {elapsed:.1f}s" if elapsed is not None else ""
     print(f"  [{current:{width}}/{total}]  {name}{time_str}")
@@ -29,32 +28,33 @@ def calculate_scores(
     export_tsv: str | Path | None = None,
     jobs: int = 1,
     validate: bool = True,
+    quiet: bool = False,
 ) -> pd.DataFrame:
-    """Score all sequences in a FASTA file using available AMP predictors.
-
-    Parameters
-    ----------
-    fasta_path:
-        Path to the input FASTA file.
-    predictor_names:
-        Predictor names to run. ``None`` uses all available.
-    export_tsv:
-        Optional path to save results as TSV.
-    jobs:
-        Parallel workers (``-1`` = all CPU threads, default ``1``).
-    validate:
-        If ``True``, validate sequences before scoring.
-    """
+    """Score all sequences in a FASTA file using available AMP predictors."""
     fasta_path = Path(fasta_path)
     if not fasta_path.exists():
         raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
 
     # ------------------------------------------------------------------
-    # Optional sequence validation
+    # Unified header + validation
     # ------------------------------------------------------------------
     if validate:
-        from pega.preprocess.validator import validate_fasta
-        ok = validate_fasta(fasta_path, verbose=True)
+        from pega.preprocess.validator import validate_fasta, _fasta_stats_from_path
+        stats = _fasta_stats_from_path(fasta_path)
+        predictor_label = "all available" if predictor_names is None else ", ".join(predictor_names)
+
+        print(f"  Input      : {fasta_path.name}")
+        print(f"  Sequences  : {stats['n']}  "
+              f"(len: {stats['min_len']}–{stats['max_len']}, avg {stats['avg_len']})")
+        print(f"  Predictors : {predictor_label}")
+        print(f"  Jobs       : {jobs}")
+        if export_tsv:
+            print(f"  Output     : {export_tsv}")
+
+        ok, status_msg = validate_fasta(fasta_path, verbose=False)
+        print(f"  Status     : {status_msg}")
+        print()
+
         if not ok:
             raise ValueError(
                 "FASTA file contains invalid sequences. "
@@ -88,12 +88,10 @@ def calculate_scores(
     # ------------------------------------------------------------------
     import os
     max_workers = os.cpu_count() if jobs == -1 else max(1, jobs)
-
     dfs: dict[str, pd.DataFrame] = {}
     errors: dict[str, str] = {}
 
     if max_workers == 1:
-        # Sequential — clean ordered output
         for i, cls in enumerate(predictor_classes, 1):
             _progress(i, total, cls.display_name)
             t0 = time.perf_counter()
@@ -101,15 +99,9 @@ def calculate_scores(
                 dfs[cls.name] = cls().score(fasta_path)
             except Exception as exc:  # noqa: BLE001
                 errors[cls.display_name] = str(exc)
-                print(
-                    f"  [warning] {cls.display_name} failed "
-                    f"({time.perf_counter() - t0:.1f}s): {exc}",
-                    file=sys.stderr,
-                )
-
+                print(f"  [warning] {cls.display_name} failed "
+                      f"({time.perf_counter() - t0:.1f}s): {exc}", file=sys.stderr)
     else:
-        # Parallel — monkey-patch tqdm to disable all progress bars,
-        # keeping only our [X/Y] progress lines clean.
         import tqdm as _tqdm_module
         _orig_tqdm_init = _tqdm_module.tqdm.__init__
 
@@ -118,7 +110,6 @@ def calculate_scores(
             _orig_tqdm_init(self, *args, **kwargs)
 
         _tqdm_module.tqdm.__init__ = _silent_init
-
         print(f"  Running {total} predictors with {max_workers} parallel workers...")
         print()
 
@@ -142,9 +133,8 @@ def calculate_scores(
                     except Exception as exc:  # noqa: BLE001
                         errors[cls.display_name] = str(exc)
                         _progress(completed, total, f"{cls.display_name} ✗")
-                        print(f"       {cls.display_name} failed: {exc}", file=sys.stderr)
+                        print(f"       failed: {exc}", file=sys.stderr)
         finally:
-            # Always restore tqdm to normal behaviour.
             _tqdm_module.tqdm.__init__ = _orig_tqdm_init
 
     if not dfs:
