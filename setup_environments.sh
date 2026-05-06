@@ -87,11 +87,24 @@ create_pega_env() {
     conda env create -f "${ENVS_DIR}/pega_env.yml"
     ok "pega_env created."
 
-    info "Installing ampir R package inside pega_env ..."
-    conda run -n pega_env Rscript -e \
-        'install.packages("ampir", repos="https://cloud.r-project.org")' \
-        && ok "ampir installed." \
-        || fail "ampir installation failed — run manually: conda activate pega_env && Rscript -e 'install.packages(\"ampir\")'"
+    local RSCRIPT="$HOME/miniconda3/envs/pega_env/bin/Rscript"
+
+    # Step 1: install compiled R dependencies via conda (avoids source build failures)
+    info "Installing R dependency packages via conda ..."
+    conda install -n pega_env -c conda-forge \
+        r-caret r-data.table r-recipes r-modelmetrics r-ipred -y
+
+    # Step 2: install ampir from CRAN using the conda R binary directly
+    info "Installing ampir from CRAN ..."
+    "$RSCRIPT" -e 'install.packages("ampir", repos="https://cloud.r-project.org")'
+
+    if "$RSCRIPT" -e 'library(ampir)' &>/dev/null; then
+        ok "ampir installed successfully."
+    else
+        fail "ampir installation failed. Try manually:"
+        info "  conda install -n pega_env -c conda-forge r-caret r-data.table r-recipes r-modelmetrics r-ipred -y"
+        info "  \$CONDA_PREFIX/bin/Rscript -e 'install.packages(\"ampir\", repos=\"https://cloud.r-project.org\")'"
+    fi
 }
 
 # ---------------------------------------------------------------------------
