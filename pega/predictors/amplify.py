@@ -44,7 +44,7 @@ _CONDA_ENV = "amplify_env"
 
 def _run_amplify(fasta_path: Path, model_type: str) -> pd.DataFrame:
     """Run AMPlify in a temporary directory and return parsed results."""
-    score_col = f"amplify_{model_type}_score"
+    score_col = f"AMPlify_{model_type}_score"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         cmd = [
@@ -120,7 +120,7 @@ class AmplifyBalancedPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "amplify_balanced_score"]``.
+            Columns: ``["seq_name", "AMPlify_balanced_score"]``.
         """
         return _run_amplify(self._validate_fasta(fasta_path), "balanced")
 
@@ -150,6 +150,6 @@ class AmplifyImbalancedPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "amplify_imbalanced_score"]``.
+            Columns: ``["seq_name", "AMPlify_imbalanced_score"]``.
         """
         return _run_amplify(self._validate_fasta(fasta_path), "imbalanced")

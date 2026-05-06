@@ -1,1 +1,1 @@
-"""pega.preprocess — under active development."""
+"""pega.preprocess — sequence preprocessing and validation utilities."""

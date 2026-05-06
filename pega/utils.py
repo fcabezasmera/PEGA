@@ -2,9 +2,6 @@
 pega.utils
 ==========
 Main scoring orchestrator for PEGA.
-
-Runs available predictors on a FASTA file, optionally in parallel,
-and returns a merged DataFrame with one score column per predictor.
 """
 
 from __future__ import annotations
@@ -23,35 +20,41 @@ def calculate_scores(
     predictor_names: list[str] | None = None,
     export_tsv: str | Path | None = None,
     jobs: int = 1,
+    validate: bool = True,
 ) -> pd.DataFrame:
     """Score all sequences in a FASTA file using available AMP predictors.
 
     Parameters
     ----------
     fasta_path:
-        Path to the input FASTA file.  Must contain only ASCII characters
-        and standard amino acid codes.
+        Path to the input FASTA file.
     predictor_names:
-        Names of the predictors to run (e.g. ``["ampnet", "modlamp_rf"]``).
-        When ``None``, all available predictors are used automatically.
+        Predictor names to run. ``None`` uses all available.
     export_tsv:
-        Optional output file path.  Results are written as TSV.
+        Optional path to save results as TSV.
     jobs:
-        Number of predictors to run in parallel (default 1 = sequential).
-        Use ``-1`` to use all available CPU threads.
-
-    Returns
-    -------
-    pandas.DataFrame
-        One row per sequence.  Columns: ``seq_name`` plus one
-        ``<name>_score`` column per predictor that ran successfully.
+        Parallel workers (``-1`` = all CPU threads, default ``1``).
+    validate:
+        If ``True``, validate sequences before scoring and warn about
+        non-canonical amino acids, short sequences, etc.
     """
     fasta_path = Path(fasta_path)
     if not fasta_path.exists():
         raise FileNotFoundError(
-            f"FASTA file not found: {fasta_path}\n"
-            "Please verify the path and try again."
+            f"FASTA file not found: {fasta_path}"
         )
+
+    # ------------------------------------------------------------------
+    # Optional sequence validation
+    # ------------------------------------------------------------------
+    if validate:
+        from pega.preprocess.validator import validate_fasta
+        ok = validate_fasta(fasta_path, verbose=True)
+        if not ok:
+            raise ValueError(
+                "FASTA file contains invalid sequences. "
+                "Run 'PEGA validate --fasta ...' for details."
+            )
 
     # ------------------------------------------------------------------
     # Resolve predictor set
@@ -78,7 +81,7 @@ def calculate_scores(
         )
 
     # ------------------------------------------------------------------
-    # Run predictors — sequential or parallel
+    # Run predictors
     # ------------------------------------------------------------------
     import os
     max_workers = os.cpu_count() if jobs == -1 else max(1, jobs)
@@ -91,7 +94,6 @@ def calculate_scores(
         return cls.name, cls().score(fasta_path)
 
     if max_workers == 1:
-        # Sequential — simpler output, easier to debug
         for cls in predictor_classes:
             try:
                 name, df = _run(cls)
@@ -104,7 +106,6 @@ def calculate_scores(
                     file=sys.stderr,
                 )
     else:
-        # Parallel — predictors run concurrently
         print(f"  Running {len(predictor_classes)} predictors "
               f"with {max_workers} parallel workers...")
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -116,15 +117,11 @@ def calculate_scores(
                     dfs[name] = df
                 except Exception as exc:  # noqa: BLE001
                     errors[cls.display_name] = str(exc)
-                    print(
-                        f"  [warning] {cls.display_name} failed: {exc}",
-                        file=sys.stderr,
-                    )
+                    print(f"  [warning] {cls.display_name} failed: {exc}",
+                          file=sys.stderr)
 
     if not dfs:
-        raise RuntimeError(
-            "All predictors failed.  Check the error messages above."
-        )
+        raise RuntimeError("All predictors failed. Check the error messages above.")
 
     # ------------------------------------------------------------------
     # Merge in original predictor order

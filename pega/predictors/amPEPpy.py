@@ -57,7 +57,7 @@ class AmPEPpyPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "ampep_score"]``.
+            Columns: ``["seq_name", "amPEPpy_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
 
@@ -105,7 +105,7 @@ class AmPEPpyPredictor(BasePredictor):
                 score_col = df_raw.columns[1]
                 df = pd.DataFrame({
                     "seq_name":   df_raw[seq_col].astype(str),
-                    "ampep_score": pd.to_numeric(df_raw[score_col], errors="coerce"),
+                    "amPEPpy_score": pd.to_numeric(df_raw[score_col], errors="coerce"),
                 })
             else:
                 # Fallback: find columns by name
@@ -113,7 +113,7 @@ class AmPEPpyPredictor(BasePredictor):
                 score_cols = [c for c in df_raw.columns if "score" in c.lower()]
                 df = pd.DataFrame({
                     "seq_name":   df_raw[seq_cols[0]].astype(str),
-                    "ampep_score": pd.to_numeric(df_raw[score_cols[0]], errors="coerce"),
+                    "amPEPpy_score": pd.to_numeric(df_raw[score_cols[0]], errors="coerce"),
                 })
 
             # amPEPpy leaves *features.csv files in cwd — clean them up
@@ -123,7 +123,7 @@ class AmPEPpyPredictor(BasePredictor):
                 except Exception:
                     pass
 
-            return df.dropna(subset=["ampep_score"]).reset_index(drop=True)
+            return df.dropna(subset=["amPEPpy_score"]).reset_index(drop=True)
 
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(

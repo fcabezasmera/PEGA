@@ -125,7 +125,7 @@ class AMPnetPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "ampnet_score"]``.
+            Columns: ``["seq_name", "AMPnet_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
         model = self._load_model()
@@ -146,4 +146,4 @@ class AMPnetPredictor(BasePredictor):
                 names.append(record.id)
                 pbar.update(1)
 
-        return pd.DataFrame({"seq_name": names, "ampnet_score": scores})
+        return pd.DataFrame({"seq_name": names, "AMPnet_score": scores})

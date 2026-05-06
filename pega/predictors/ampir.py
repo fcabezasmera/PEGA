@@ -60,7 +60,7 @@ def _run_ampir(fasta_path: Path, model_type: str) -> pd.DataFrame:
     pandas.DataFrame
         Columns: ``["seq_name", "ampir_{model_type}_score"]``.
     """
-    score_col = f"ampir_{model_type}_score"
+    score_col = f"AMPir_{model_type}_score"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         r_script_path = os.path.join(tmp_dir, f"ampir_{model_type}.R")
@@ -145,7 +145,7 @@ class AmpirMaturePredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "ampir_mature_score"]``.
+            Columns: ``["seq_name", "AMPir_mature_score"]``.
         """
         return _run_ampir(self._validate_fasta(fasta_path), model_type="mature")
 
@@ -178,6 +178,6 @@ class AmpirPrecursorPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "ampir_precursor_score"]``.
+            Columns: ``["seq_name", "AMPir_precursor_score"]``.
         """
         return _run_ampir(self._validate_fasta(fasta_path), model_type="precursor")

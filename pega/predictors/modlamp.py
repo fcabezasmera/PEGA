@@ -114,7 +114,7 @@ class ModlampRFPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "modlamp_rf_score"]``.
+            Columns: ``["seq_name", "modlAMP_RF_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
         model = self._load_model()
@@ -137,7 +137,7 @@ class ModlampRFPredictor(BasePredictor):
                 scores.append(float(prob[1]) if len(prob) > 1 else float(prob[0]))
                 pbar.update(1)
 
-        return pd.DataFrame({"seq_name": names, "modlamp_rf_score": scores})
+        return pd.DataFrame({"seq_name": names, "modlAMP_RF_score": scores})
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +196,7 @@ class ModlampSVMPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "modlamp_svm_score"]``.
+            Columns: ``["seq_name", "modlAMP_SVM_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
         model = self._load_model()
@@ -224,4 +224,4 @@ class ModlampSVMPredictor(BasePredictor):
                     scores.append(float(1 / (1 + np.exp(-decision))))
                 pbar.update(1)
 
-        return pd.DataFrame({"seq_name": names, "modlamp_svm_score": scores})
+        return pd.DataFrame({"seq_name": names, "modlAMP_SVM_score": scores})

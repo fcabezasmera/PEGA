@@ -154,7 +154,7 @@ class AMPCGPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "amp_cg_score"]``.
+            Columns: ``["seq_name", "AMP_CG_score"]``.
         """
         import torch
 
@@ -188,4 +188,4 @@ class AMPCGPredictor(BasePredictor):
                 all_probs.extend(probs)
                 pbar.update(1)
 
-        return pd.DataFrame({"seq_name": list(ids), "amp_cg_score": all_probs})
+        return pd.DataFrame({"seq_name": list(ids), "AMP_CG_score": all_probs})

@@ -72,7 +72,7 @@ class MacrelPredictor(BasePredictor):
         Returns
         -------
         pandas.DataFrame
-            Columns: ``["seq_name", "macrel_score"]``.
+            Columns: ``["seq_name", "Macrel_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
         output_dir = "temp_macrel"
@@ -118,10 +118,10 @@ class MacrelPredictor(BasePredictor):
             # skiprows=2 skips the comment line and column header
             # Columns: 0=seq_name, 1=sequence, 2=AMP label, 3=hemolytic, 4=AMP_prob
             raw = pd.read_csv(result_file, sep="\t", skiprows=2, header=None)
-            scores = raw.iloc[:, [0, 4]].rename(columns={0: "seq_name", 4: "macrel_score"})
-            scores["macrel_score"] = pd.to_numeric(scores["macrel_score"], errors="coerce")
+            scores = raw.iloc[:, [0, 4]].rename(columns={0: "seq_name", 4: "Macrel_score"})
+            scores["Macrel_score"] = pd.to_numeric(scores["Macrel_score"], errors="coerce")
 
-            return scores.dropna(subset=["macrel_score"]).reset_index(drop=True)
+            return scores.dropna(subset=["Macrel_score"]).reset_index(drop=True)
 
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
