@@ -22,7 +22,6 @@ __all__ = [
 def score(
     fasta_path: str,
     predictors: list[str] | None = None,
-    ensemble: bool = True,
     export_tsv: str | None = None,
 ):
     """Score sequences in a FASTA file using available AMP predictors.
@@ -34,43 +33,25 @@ def score(
     predictors:
         List of predictor names to use (e.g. ``["ampnet", "modlamp_rf"]``).
         If ``None``, all available predictors are used automatically.
-    ensemble:
-        If ``True`` (default), ensemble summary columns are appended
-        to the output DataFrame.
     export_tsv:
         Optional file path. When provided, results are written as TSV.
 
     Returns
     -------
     pandas.DataFrame
-        One row per sequence, one column per predictor score, plus
-        ensemble summary columns when ``ensemble=True``.
+        One row per sequence, one column per predictor score.
     """
     from pega.utils import calculate_scores
 
     return calculate_scores(
         fasta_path=fasta_path,
         predictor_names=predictors,
-        apply_ensemble=ensemble,
         export_tsv=export_tsv,
     )
 
 
 def list_predictors(available_only: bool = False) -> list[dict]:
-    """Return metadata for all registered predictors.
-
-    Parameters
-    ----------
-    available_only:
-        If ``True``, only predictors whose dependencies are currently
-        satisfied are returned.
-
-    Returns
-    -------
-    list of dict
-        Each dict contains ``name``, ``predictor_id``, ``description``,
-        ``category``, and ``available`` keys.
-    """
+    """Return metadata for all registered predictors."""
     from pega.registry import registry
 
     predictors = (
