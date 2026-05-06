@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "pega-amp"
+version = "0.1.0"
+description = "Peptide Evolution via Genetic Algorithm — multi-predictor ensemble scoring for antimicrobial peptide research"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+  { name = "Your Name", email = "your@email.com" }
+]
+keywords = [
+  "antimicrobial peptides",
+  "AMP",
+  "bioinformatics",
+  "genetic algorithm",
+  "ensemble",
+  "computational biology",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "biopython>=1.81",
+  "tqdm>=4.65",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+deep = [
+  "tensorflow>=2.13",
+  "torch>=2.0",
+  "transformers>=4.35",
+]
+modlamp = [
+  "scikit-learn>=1.3",
+  "joblib>=1.3",
+  "modlamp>=4.3",
+]
+all = [
+  "pega-amp[deep]",
+  "pega-amp[modlamp]",
+]
+dev = [
+  "pytest>=7.0",
+  "pytest-cov",
+  "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USER/PEGA"
+Repository = "https://github.com/YOUR_USER/PEGA"
+"Bug Tracker" = "https://github.com/YOUR_USER/PEGA/issues"
+Documentation = "https://github.com/YOUR_USER/PEGA#readme"
+
+[project.scripts]
+pega = "pega.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pega*"]
+
+[tool.setuptools.package-data]
+"pega" = ["models/.gitkeep"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "slow: marks tests as slow",
+  "deep: requires tensorflow or pytorch",
+  "r_required: requires R and ampir",
+  "conda_required: requires a conda environment",
+]
