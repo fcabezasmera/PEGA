@@ -42,3 +42,4 @@ htmlcov/
 # Notebooks
 .ipynb_checkpoints/
 *.ipynb
+pega_amp.egg-info/
