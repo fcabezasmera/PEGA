@@ -51,6 +51,7 @@ class MacrelPredictor(BasePredictor):
     """
 
     name = "macrel"
+    display_name = "Macrel"
     predictor_id = 6
     description = "SVM with physico-chemical features via the Macrel tool (conda)."
     category = "conda"

@@ -42,6 +42,7 @@ class AmPEPpyPredictor(BasePredictor):
     """Random Forest AMP predictor via the amPEPpy ``ampep`` command."""
 
     name = "ampep"
+    display_name = "amPEPpy"
     predictor_id = 2
     description = "Random Forest on sequence composition features via amPEPpy."
     category = "pip"

@@ -5,20 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pega-amp"
 version = "0.1.0"
-description = "Peptide Evolution via Genetic Algorithm — multi-predictor ensemble scoring for antimicrobial peptide research"
+description = "Peptide Evolution via Genetic Algorithm — multi-predictor scoring for antimicrobial peptide research"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [
-  { name = "Your Name", email = "your@email.com" }
+  { name = "fcabezasmera", email = "your@email.com" }
 ]
 keywords = [
-  "antimicrobial peptides",
-  "AMP",
-  "bioinformatics",
-  "genetic algorithm",
-  "ensemble",
-  "computational biology",
+  "antimicrobial peptides", "AMP", "bioinformatics",
+  "genetic algorithm", "computational biology",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -50,24 +46,16 @@ modlamp = [
   "joblib>=1.3",
   "modlamp>=4.3",
 ]
-all = [
-  "pega-amp[deep]",
-  "pega-amp[modlamp]",
-]
-dev = [
-  "pytest>=7.0",
-  "pytest-cov",
-  "ruff",
-]
+all = ["PEGA.py[deep]", "PEGA.py[modlamp]"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff"]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USER/PEGA"
-Repository = "https://github.com/YOUR_USER/PEGA"
-"Bug Tracker" = "https://github.com/YOUR_USER/PEGA/issues"
-Documentation = "https://github.com/YOUR_USER/PEGA#readme"
+Homepage = "https://github.com/fcabezasmera/PEGA"
+Repository = "https://github.com/fcabezasmera/PEGA"
+"Bug Tracker" = "https://github.com/fcabezasmera/PEGA/issues"
 
 [project.scripts]
-pega = "pega.cli:main"
+PEGA = "pega.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
