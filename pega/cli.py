@@ -114,8 +114,12 @@ def cmd_score(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    # Preview — first 10 rows only
+    n = len(df)
     print()
-    print(df.to_string(index=False))
+    print(df.head(10).to_string(index=False))
+    if n > 10:
+        print(f"  ... {n - 10} more rows in output file.")
     return 0
 
 
@@ -185,7 +189,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fasta", "-f", required=True, metavar="FILE")
     sp.add_argument("--predictors", "-p", nargs="+", metavar="NAME",
                     help="Predictor names (run 'PEGA list' for names). Default: all.")
-    sp.add_argument("--out", "-o", metavar="FILE", help="Save results as TSV.")
+    sp.add_argument("--out", "-o", metavar="FILE",
+                    help="Output TSV file path. Default: PEGA_results_<timestamp>.tsv")
     sp.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
                     help="Parallel workers. Use -1 for all CPU threads. Default: 1.")
     sp.add_argument("-q", "--quiet", action="store_true", default=False,

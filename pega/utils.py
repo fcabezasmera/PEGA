@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -48,8 +49,8 @@ def calculate_scores(
               f"(len: {stats['min_len']}–{stats['max_len']}, avg {stats['avg_len']})")
         print(f"  Predictors : {predictor_label}")
         print(f"  Jobs       : {jobs}")
-        if export_tsv:
-            print(f"  Output     : {export_tsv}")
+        out_label = export_tsv if export_tsv else f"PEGA_results_<timestamp>.tsv"
+        print(f"  Output     : {out_label}")
 
         ok, status_msg = validate_fasta(fasta_path, verbose=False)
         print(f"  Status     : {status_msg}")
@@ -149,12 +150,15 @@ def calculate_scores(
         merged = pd.merge(merged, df, on="seq_name", how="outer")
 
     # ------------------------------------------------------------------
-    # Export
+    # Export — always save to TSV (default name if not specified)
     # ------------------------------------------------------------------
-    if export_tsv is not None:
-        out_path = Path(export_tsv)
-        merged.to_csv(out_path, sep="\t", index=False)
-        print(f"\n  Saved → {out_path}")
+    if export_tsv is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_tsv = f"PEGA_results_{timestamp}.tsv"
+
+    out_path = Path(export_tsv)
+    merged.to_csv(out_path, sep="\t", index=False)
+    print(f"\n  Saved → {out_path}  ({len(merged)} sequences × {len(merged.columns)-1} predictors)")
 
     if errors:
         print(f"\n  Failed: {', '.join(errors)}")
