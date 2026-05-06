@@ -33,4 +33,4 @@ dependencies:
       - torch==2.5.1
       - transformers==4.47.0
       - modlamp==4.3.0
-      - ampeppy==1.1.0
+      - git+https://github.com/tlawrence3/amPEPpy.git

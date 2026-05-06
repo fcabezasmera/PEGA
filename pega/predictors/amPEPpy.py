@@ -1,50 +1,46 @@
 """
 pega.predictors.amPEPpy
 =======================
-amPEPpy predictor — Random Forest trained on sequence composition features.
+amPEPpy predictor — Random Forest on sequence composition features.
 
-The predictor invokes the ``ampep`` command-line tool (amPEPpy) and parses
-its output.  The pre-trained model file is bundled with PEGA.
-
-Pre-trained weights
--------------------
-File: ``pega/models/amPEP.model``
-Download: ``pega download-models``
+The predictor invokes the ``ampep predict`` command and parses its output.
+The pre-trained model file is bundled with PEGA (``pega/models/amPEP.model``).
 
 Installation
 ------------
-    pip install ampep
-    # or
-    conda install -c bioconda ampep
+    pip install git+https://github.com/tlawrence3/amPEPpy.git
+
+Usage (standalone)
+------------------
+    ampep predict -m pega/models/amPEP.model -s sequences.fasta
 
 Reference
 ---------
-Yan J. et al. (2022).  amPEPpy 1.0: A portable and accurate antimicrobial
-peptide prediction tool.  *Bioinformatics*, 38(4), 1162–1163.
+Lawrence T.J. et al. (2021).  amPEPpy 1.0: A portable and accurate
+antimicrobial peptide prediction tool.  *Bioinformatics*, 37(18), 2979–2981.
+https://github.com/tlawrence3/amPEPpy
 """
 
 from __future__ import annotations
 
-import glob
-import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 import pandas as pd
-from Bio import SeqIO
 from tqdm import tqdm
 
 from pega.base import BasePredictor
 
 
 class AmPEPpyPredictor(BasePredictor):
-    """Random Forest AMP predictor via the amPEPpy command-line tool.
+    """Random Forest AMP predictor via the amPEPpy ``ampep`` command.
 
-    Requires the ``ampep`` executable and the pre-trained model file
-    ``pega/models/amPEP.model``.  Run ``pega download-models`` to obtain
-    the model weights.
+    Requires the ``ampep`` executable::
+
+        pip install git+https://github.com/tlawrence3/amPEPpy.git
+
+    and the pre-trained model ``pega/models/amPEP.model``.
     """
 
     name = "ampep"
@@ -57,7 +53,7 @@ class AmPEPpyPredictor(BasePredictor):
         return cls._executable_on_path("ampep")
 
     def score(self, fasta_path: str | Path) -> pd.DataFrame:
-        """Score sequences with amPEPpy.
+        """Score sequences with ``ampep predict``.
 
         Parameters
         ----------
@@ -79,52 +75,53 @@ class AmPEPpyPredictor(BasePredictor):
             )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            result_pattern = os.path.join(tmp_dir, "ampep_results_*.tsv")
+            out_file = Path(tmp_dir) / "ampep_results.tsv"
 
             cmd = [
-                "ampep", "score",
-                "--fasta", str(fasta_path),
-                "--model", str(model_path),
-                "--outdir", tmp_dir,
+                "ampep", "predict",
+                "-m", str(model_path),
+                "-s", str(fasta_path),
+                "-o", str(out_file),
             ]
 
             print("  Running amPEPpy...")
             try:
-                subprocess.run(
+                result = subprocess.run(
                     cmd,
                     check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    capture_output=True,
+                    text=True,
                 )
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
-                    f"amPEPpy failed with exit code {exc.returncode}.\n"
-                    f"stderr: {exc.stderr.decode(errors='replace')}"
+                    f"ampep predict failed (exit {exc.returncode}).\n"
+                    f"stderr: {exc.stderr}\n"
+                    "Check your amPEPpy installation: "
+                    "pip install git+https://github.com/tlawrence3/amPEPpy.git"
                 ) from exc
 
-            result_files = glob.glob(result_pattern)
-            if not result_files:
+            if not out_file.exists():
                 raise RuntimeError(
-                    "amPEPpy did not produce an output file.  "
+                    "ampep predict did not produce an output file. "
                     "Check your amPEPpy installation."
                 )
 
-            result_file = max(result_files, key=os.path.getctime)
-            raw = pd.read_csv(result_file, sep="\t")
+            raw = pd.read_csv(out_file, sep="\t")
+            raw.columns = [c.strip() for c in raw.columns]
 
-        # Normalise column names across amPEPpy versions.
-        raw.columns = [c.strip().lower() for c in raw.columns]
+        # Locate sequence name and score columns robustly.
         name_col = next(
-            (c for c in raw.columns if "name" in c or "id" in c), raw.columns[0]
+            (c for c in raw.columns
+             if c.lower() in ("sequence_id", "seq_name", "name", "id")),
+            raw.columns[0],
         )
         score_col = next(
-            (c for c in raw.columns if "score" in c or "prob" in c), raw.columns[1]
+            (c for c in raw.columns
+             if "prob" in c.lower() or "score" in c.lower() or "amp" in c.lower()),
+            raw.columns[-1],
         )
 
-        df = pd.DataFrame(
-            {
-                "seq_name": raw[name_col].astype(str),
-                "ampep_score": pd.to_numeric(raw[score_col], errors="coerce"),
-            }
-        )
-        return df.dropna(subset=["ampep_score"]).reset_index(drop=True)
+        return pd.DataFrame({
+            "seq_name": raw[name_col].astype(str),
+            "ampep_score": pd.to_numeric(raw[score_col], errors="coerce"),
+        }).dropna(subset=["ampep_score"]).reset_index(drop=True)
