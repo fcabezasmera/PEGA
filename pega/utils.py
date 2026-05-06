@@ -18,8 +18,9 @@ from pega.registry import registry
 
 def _progress(current: int, total: int, name: str, elapsed: float | None = None) -> None:
     """Print a simple [X/Y] progress line."""
+    width = len(str(total))
     time_str = f"  {elapsed:.1f}s" if elapsed is not None else ""
-    print(f"  [{current:>{len(str(total))}/{total}]  {name}{time_str}")
+    print(f"  [{current:{width}}/{total}]  {name}{time_str}")
 
 
 def calculate_scores(
@@ -100,15 +101,17 @@ def calculate_scores(
                 dfs[cls.name] = cls().score(fasta_path)
             except Exception as exc:  # noqa: BLE001
                 errors[cls.display_name] = str(exc)
-                elapsed = time.perf_counter() - t0
                 print(
                     f"  [warning] {cls.display_name} failed "
-                    f"({elapsed:.1f}s): {exc}",
+                    f"({time.perf_counter() - t0:.1f}s): {exc}",
                     file=sys.stderr,
                 )
 
     else:
-        # Parallel — show results as they complete
+        # Parallel — disable individual tqdm bars to keep output clean
+        import os
+        os.environ["TQDM_DISABLE"] = "1"
+
         print(f"  Running {total} predictors with {max_workers} parallel workers...")
         print()
 
@@ -131,10 +134,9 @@ def calculate_scores(
                 except Exception as exc:  # noqa: BLE001
                     errors[cls.display_name] = str(exc)
                     _progress(completed, total, f"{cls.display_name} ✗")
-                    print(
-                        f"       {cls.display_name} failed: {exc}",
-                        file=sys.stderr,
-                    )
+                    print(f"       {cls.display_name} failed: {exc}", file=sys.stderr)
+
+        os.environ.pop("TQDM_DISABLE", None)
 
     if not dfs:
         raise RuntimeError("All predictors failed. Check the error messages above.")

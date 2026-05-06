@@ -3,31 +3,11 @@ pega.predictors.ampnet
 ======================
 AMPnet predictor — convolutional neural network (TensorFlow).
 
-Model
------
-A 1-D CNN trained on a benchmark AMP / non-AMP dataset.  Input features
-are a one-hot encoding of the amino acid sequence (padded to 198 residues)
-combined with Kyte-Doolittle hydrophobicity scores.
-
 Pre-trained weights
 -------------------
 File: ``pega/models/convolutional_nn_1.h5``
 Download: ``pega download-models``
-
-Reference
----------
-Please cite the original AMPnet publication when using this predictor.
 """
-
-# Suppress TensorFlow C++ and absl warnings before TF is imported.
-# setdefault is used so that user-defined env vars are respected.
-import os as _os
-import logging as _logging
-
-_os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-_os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
-_logging.getLogger("absl").setLevel(_logging.ERROR)
-_logging.getLogger("tensorflow").setLevel(_logging.ERROR)
 
 from __future__ import annotations
 
@@ -40,9 +20,6 @@ from Bio import SeqIO
 from tqdm import tqdm
 
 from pega.base import BasePredictor
-
-# Suppress TensorFlow informational messages.
-logging.getLogger("tensorflow").setLevel(logging.ERROR)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -66,12 +43,7 @@ _KD_SCORES: dict[str, float] = {
 
 
 class AMPnetPredictor(BasePredictor):
-    """Convolutional neural network AMP predictor (TensorFlow).
-
-    Requires the TensorFlow package and the pre-trained model file
-    ``pega/models/convolutional_nn_1.h5``.  Run ``pega download-models``
-    to obtain the model weights.
-    """
+    """Convolutional neural network AMP predictor (TensorFlow)."""
 
     name = "ampnet"
     display_name = "AMPnet"
@@ -79,7 +51,6 @@ class AMPnetPredictor(BasePredictor):
     description = "Convolutional neural network trained on AMP/non-AMP sequences (TensorFlow)."
     category = "pip"
 
-    # Model is loaded once per class and shared across instances.
     _model = None
 
     @classmethod
@@ -92,9 +63,15 @@ class AMPnetPredictor(BasePredictor):
 
     @classmethod
     def _load_model(cls):
-        """Load the Keras model from disk (once per process)."""
         if cls._model is not None:
             return cls._model
+
+        # Suppress TF and absl warnings right before loading.
+        import os
+        os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+        os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+        logging.getLogger("absl").setLevel(logging.ERROR)
+        logging.getLogger("tensorflow").setLevel(logging.ERROR)
 
         import tensorflow as tf
 
@@ -107,30 +84,16 @@ class AMPnetPredictor(BasePredictor):
         cls._model = tf.keras.models.load_model(str(model_path))
         return cls._model
 
-    # ------------------------------------------------------------------
-    # Feature encoding
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _one_hot_pad(sequence: str) -> np.ndarray:
-        """One-hot encode a sequence and pad/truncate to ``_MAX_LEN``."""
         matrix = np.zeros((_MAX_LEN, len(_AA_ORDER)), dtype=np.float32)
         for i, aa in enumerate(sequence[:_MAX_LEN]):
             if aa in _AA_INDEX:
                 matrix[i, _AA_INDEX[aa]] = 1.0
         return matrix
 
-    # ------------------------------------------------------------------
-    # Scoring
-    # ------------------------------------------------------------------
-
-    def score(self, fasta_path: str | Path) -> pd.DataFrame:
-        """Score sequences in ``fasta_path`` with the AMPnet CNN.
-
-        Parameters
-        ----------
-        fasta_path:
-            Path to the input FASTA file.
+    def score(self, fasta_path: str | Path, disable_tqdm: bool = False) -> pd.DataFrame:
+        """Score sequences with the AMPnet CNN.
 
         Returns
         -------
@@ -147,7 +110,8 @@ class AMPnetPredictor(BasePredictor):
         names: list[str] = []
         scores: list[float] = []
 
-        with tqdm(total=len(records), desc="AMPnet", unit="seq") as pbar:
+        with tqdm(total=len(records), desc="AMPnet", unit="seq",
+                  disable=disable_tqdm) as pbar:
             for record in records:
                 seq = str(record.seq).upper()
                 x = self._one_hot_pad(seq)[np.newaxis, ...]
