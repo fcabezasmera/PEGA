@@ -181,23 +181,28 @@ bash setup_environments.sh --status  # check status without installing
 
 ### Step 6 — Model weights
 
-Pre-trained model files must be placed in `pega/models/`.
-Download them from the [GitHub Releases](https://github.com/fcabezasmera/PEGA/releases) page:
+Pre-trained model weights are included in the repository via **Git LFS**.
+They are downloaded automatically when you clone:
 
 ```bash
-conda activate pega_env
-PEGA download-models
+git clone https://github.com/fcabezasmera/PEGA.git
 ```
 
-Expected files:
+If you cloned without LFS (e.g. with `GIT_LFS_SKIP_SMUDGE=1`), pull the models manually:
+
+```bash
+git lfs pull
+```
+
+Files included in `pega/models/`:
 
 ```
 pega/models/
-├── convolutional_nn_1.h5   # AMPnet
-├── best_model.pth          # AMP_CG
-├── amPEP.model             # amPEPpy
-├── modlamp_RF.joblib       # modlAMP RF
-└── modlamp_SVM.joblib      # modlAMP SVM
+├── convolutional_nn_1.h5   # AMPnet       (42 MB)
+├── best_model.pth          # AMP_CG       (31 MB)
+├── amPEP.model             # amPEPpy      (17 MB)
+├── modlamp_RF.joblib       # modlAMP RF   (12 MB)
+└── modlamp_SVM.joblib      # modlAMP SVM  ( 2 MB)
 ```
 
 ---
