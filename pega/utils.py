@@ -12,6 +12,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from pega.registry import registry
@@ -148,6 +149,19 @@ def calculate_scores(
     merged = ordered[0]
     for df in ordered[1:]:
         merged = pd.merge(merged, df, on="seq_name", how="outer")
+
+    # ------------------------------------------------------------------
+    # Summary statistics across predictor scores
+    # ------------------------------------------------------------------
+    score_cols = [c for c in merged.columns if c.endswith("_score")]
+    if score_cols:
+        scores = merged[score_cols].fillna(0)
+        merged["mean_score"]      = scores.mean(axis=1)
+        merged["geomean_score"]   = np.exp(np.log(scores.clip(lower=0) + 1e-9).mean(axis=1))
+        merged["median_score"]    = scores.median(axis=1)
+        merged["min_score"]       = scores.min(axis=1)
+        merged["std_score"]       = scores.std(axis=1, ddof=0)  # population std (all predictors measured, not a sample)
+        merged["consensus_score"] = 1 / (1 + merged["std_score"])
 
     # ------------------------------------------------------------------
     # Export — always save to TSV (default name if not specified)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-_FITNESS_COL = "geometric_mean"
+_FITNESS_COL = "mean_geometric"
 
 
 def proportional(population: pd.DataFrame, n: int) -> pd.DataFrame:
