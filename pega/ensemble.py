@@ -1,33 +1,37 @@
 """
 pega.ensemble
 =============
-Ensemble aggregation methods and fuzzy membership functions.
+Validated ensemble scores for antimicrobial peptide prediction.
 
-All public functions in this module operate on a ``pandas.DataFrame``
-that contains one or more predictor score columns (columns whose names
-end in ``_score``).  They return either a ``pandas.Series`` (for single
-aggregation methods) or an augmented ``DataFrame`` (for the convenience
-wrappers).
+Each ensemble was identified by stochastic search over predictor subsets,
+score transformations, and combination methods using dataset_d1
+(n = 40,348 sequences). Normalisation parameters (min, max, mean, std)
+are fixed from that dataset so that ensemble scores are consistent and
+reproducible for any input size — including single sequences.
 
-Ensemble methods
-----------------
-- :func:`arithmetic_mean`   — simple average across predictors.
-- :func:`geometric_mean`    — geometric mean; penalises low scores more.
-- :func:`weighted_voting`   — weights each predictor by its correlation
-                              with the column mean.
-- :func:`rank_aggregation`  — averages normalised rank positions.
-- :func:`majority_voting`   — fraction of predictors above a threshold.
-- :func:`stacking_ensemble` — correlation-matrix-weighted sum.
+Transformations
+---------------
+raw         : f(x) = x
+minmax      : f(x) = (x - min) / (max - min)   — fixed from dataset_d1
+zsigmoid    : f(x) = sigmoid((x - mean) / std) — fixed from dataset_d1
+gamma2      : f(x) = x²                         — no dataset parameters needed
+gamma0.5    : f(x) = √x                         — no dataset parameters needed
+logistic10  : f(x) = sigmoid(10 × (x − 0.5))   — no dataset parameters needed
 
-Fuzzy membership functions
---------------------------
-Applied per predictor score column when requested.  Each function maps
-a score in ``[0, 1]`` to a membership degree in ``[0, 1]``.
+Combination methods
+-------------------
+weighted_mean : ensemble = Σ wᵢ × transform(scoreᵢ),  Σwᵢ = 1
+mean          : ensemble = (1/n) × Σ transform(scoreᵢ)
 
-- :func:`sigmoid_membership`
-- :func:`gaussian_membership`
-- :func:`triangular_membership`
-- :func:`trapezoidal_membership`
+Usage
+-----
+>>> from pega.ensemble import compute_ensembles
+>>> df = compute_ensembles(df)   # df is the output of calculate_scores()
+
+Available ensemble columns added
+---------------------------------
+ensemble_AMP_score   — weighted_mean of 5 predictors
+                       MCC=0.767, AUC=0.932  (dataset_d1, n=40,348)
 """
 
 from __future__ import annotations
@@ -35,367 +39,236 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+# ---------------------------------------------------------------------------
+# Normalisation parameters — fixed from dataset_d1 (n = 40,348 sequences)
+# ---------------------------------------------------------------------------
+
+_PARAMS: dict[str, dict[str, float]] = {
+    "AMP_CG_score": {
+        "min":  0.0000547703,
+        "max":  0.9986024499,
+    },
+    "ampir_mature_score": {
+        "min":  0.0011548338,
+        "max":  0.9994789187,
+        "mean": 0.5027099536,
+        "std":  0.3431127575,
+    },
+    "AMPlify_balanced_score": {
+        "min":  0.0,
+        "max":  1.0,
+    },
+    # AMPnet_score and modlAMP_RF_score use gamma2 — no parameters needed
+}
 
 # ---------------------------------------------------------------------------
-# Fuzzy membership functions
+# Transformation functions
 # ---------------------------------------------------------------------------
 
 
-def sigmoid_membership(
-    x: np.ndarray | pd.Series,
-    center: float = 0.5,
-    steepness: float = 10.0,
+def _raw(x: np.ndarray, **_) -> np.ndarray:
+    return x.copy()
+
+
+def _minmax(x: np.ndarray, min: float, max: float, **_) -> np.ndarray:
+    rng = max - min
+    if rng == 0:
+        return np.full_like(x, 0.5)
+    return (x - min) / rng
+
+
+def _zsigmoid(x: np.ndarray, mean: float, std: float, **_) -> np.ndarray:
+    if std == 0:
+        return np.full_like(x, 0.5)
+    z = (x - mean) / std
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def _gamma2(x: np.ndarray, **_) -> np.ndarray:
+    return np.clip(x, 0, 1) ** 2
+
+
+def _gamma05(x: np.ndarray, **_) -> np.ndarray:
+    return np.sqrt(np.clip(x, 0, 1))
+
+
+def _logistic10(x: np.ndarray, **_) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-10.0 * (x - 0.5)))
+
+
+_TRANSFORMS = {
+    "raw":        _raw,
+    "minmax":     _minmax,
+    "zsigmoid":   _zsigmoid,
+    "gamma2":     _gamma2,
+    "gamma0.5":   _gamma05,
+    "logistic10": _logistic10,
+}
+
+# ---------------------------------------------------------------------------
+# Ensemble definitions
+# ---------------------------------------------------------------------------
+# Each ensemble is a dict with:
+#   "method"      : "weighted_mean" | "mean"
+#   "components"  : list of (score_col, transform_name, weight)
+#   "description" : short human-readable description
+#   "metrics"     : performance metrics from dataset_d1
+# ---------------------------------------------------------------------------
+
+ENSEMBLES: dict[str, dict] = {
+    "ensemble_AMP_score": {
+        "method": "weighted_mean",
+        "components": [
+            # (score_column,            transform,    weight)
+            ("AMP_CG_score",          "minmax",    0.383),
+            ("ampir_mature_score",     "zsigmoid",  0.225),
+            ("AMPlify_balanced_score", "minmax",    0.141),
+            ("AMPnet_score",           "gamma2",    0.167),
+            ("modlamp_RF_score",       "gamma2",    0.084),
+        ],
+        "description": (
+            "Weighted mean ensemble (5 predictors). "
+            "Normalisation parameters fixed from dataset_d1 (n=40,348)."
+        ),
+        "metrics": {
+            "accuracy":    0.8827,
+            "precision":   0.9364,
+            "f1":          0.8581,
+            "sensitivity": 0.7918,
+            "specificity": 0.9563,
+            "mcc":         0.7670,
+            "auc":         0.9318,
+            "kappa":       0.7592,
+        },
+    },
+    # Additional ensembles will be added here
+}
+
+
+# ---------------------------------------------------------------------------
+# Core computation
+# ---------------------------------------------------------------------------
+
+
+def _apply_transform(
+    values: np.ndarray,
+    transform: str,
+    col: str,
 ) -> np.ndarray:
-    """Sigmoid membership function.
+    """Apply a named transformation to an array of scores.
 
     Parameters
     ----------
-    x:
-        Input values in ``[0, 1]``.
-    center:
-        Inflection point of the sigmoid (default 0.5).
-    steepness:
-        Controls the slope at the inflection point (default 10).
+    values : np.ndarray
+        Raw predictor scores.
+    transform : str
+        Transformation name (e.g. ``"minmax"``, ``"zsigmoid"``).
+    col : str
+        Score column name — used to look up fixed normalisation parameters.
 
     Returns
     -------
-    numpy.ndarray
-        Membership degrees in ``[0, 1]``.
+    np.ndarray
+        Transformed scores.
     """
-    return 1.0 / (1.0 + np.exp(-steepness * (np.asarray(x) - center)))
+    fn = _TRANSFORMS.get(transform)
+    if fn is None:
+        raise ValueError(
+            f"Unknown transformation '{transform}'. "
+            f"Available: {list(_TRANSFORMS)}"
+        )
+    params = _PARAMS.get(col, {})
+    return fn(values, **params)
 
 
-def gaussian_membership(
-    x: np.ndarray | pd.Series,
-    center: float = 0.5,
-    width: float = 0.2,
-) -> np.ndarray:
-    """Gaussian membership function.
-
-    Parameters
-    ----------
-    x:
-        Input values in ``[0, 1]``.
-    center:
-        Peak of the Gaussian (default 0.5).
-    width:
-        Standard deviation controlling spread (default 0.2).
-
-    Returns
-    -------
-    numpy.ndarray
-        Membership degrees in ``[0, 1]``.
-    """
-    return np.exp(-0.5 * ((np.asarray(x) - center) / width) ** 2)
-
-
-def triangular_membership(
-    x: np.ndarray | pd.Series,
-    a: float = 0.2,
-    b: float = 0.5,
-    c: float = 0.8,
-) -> np.ndarray:
-    """Triangular membership function.
-
-    Parameters
-    ----------
-    x:
-        Input values in ``[0, 1]``.
-    a:
-        Left foot of the triangle (membership = 0).
-    b:
-        Peak of the triangle (membership = 1).
-    c:
-        Right foot of the triangle (membership = 0).
-
-    Returns
-    -------
-    numpy.ndarray
-        Membership degrees in ``[0, 1]``.
-    """
-    x = np.asarray(x)
-    return np.maximum(
-        0,
-        np.minimum((x - a) / (b - a), (c - x) / (c - b)),
-    )
-
-
-def trapezoidal_membership(
-    x: np.ndarray | pd.Series,
-    a: float = 0.1,
-    b: float = 0.3,
-    c: float = 0.7,
-    d: float = 0.9,
-) -> np.ndarray:
-    """Trapezoidal membership function.
-
-    Parameters
-    ----------
-    x:
-        Input values in ``[0, 1]``.
-    a, b:
-        Left shoulder: membership rises from 0 at ``a`` to 1 at ``b``.
-    c, d:
-        Right shoulder: membership falls from 1 at ``c`` to 0 at ``d``.
-
-    Returns
-    -------
-    numpy.ndarray
-        Membership degrees in ``[0, 1]``.
-    """
-    x = np.asarray(x)
-    return np.maximum(
-        0,
-        np.minimum(1, np.minimum((x - a) / (b - a), (d - x) / (d - c))),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Per-column membership wrapper
-# ---------------------------------------------------------------------------
-
-
-def add_membership_columns(df: pd.DataFrame, score_column: str) -> pd.DataFrame:
-    """Append four fuzzy membership columns for one predictor score column.
-
-    Columns added (where ``<base>`` is ``score_column`` with ``_score``
-    removed):
-
-    * ``<base>_sigmoid``
-    * ``<base>_gaussian``
-    * ``<base>_triangular``
-    * ``<base>_trapezoidal``
-
-    Parameters
-    ----------
-    df:
-        DataFrame containing ``score_column``.
-    score_column:
-        Name of the predictor score column to transform.
-
-    Returns
-    -------
-    pandas.DataFrame
-        The input DataFrame with four new columns appended (in-place copy).
-    """
-    base = score_column.replace("_score", "")
-    scores = df[score_column].fillna(0).to_numpy()
-
-    df = df.copy()
-    df[f"{base}_sigmoid"] = sigmoid_membership(scores, center=0.5, steepness=12)
-    df[f"{base}_gaussian"] = gaussian_membership(scores, center=0.8, width=0.15)
-    df[f"{base}_triangular"] = triangular_membership(scores, a=0.5, b=0.75, c=0.9)
-    df[f"{base}_trapezoidal"] = trapezoidal_membership(
-        scores, a=0.4, b=0.6, c=0.85, d=0.95
-    )
-    return df
-
-
-# ---------------------------------------------------------------------------
-# Ensemble aggregation methods
-# ---------------------------------------------------------------------------
-
-
-def arithmetic_mean(df: pd.DataFrame, score_columns: list[str]) -> pd.Series:
-    """Simple arithmetic mean across predictor scores.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-
-    Returns
-    -------
-    pandas.Series
-    """
-    return df[score_columns].mean(axis=1)
-
-
-def geometric_mean(df: pd.DataFrame, score_columns: list[str]) -> pd.Series:
-    """Geometric mean across predictor scores.
-
-    A small epsilon is added before taking the log to avoid
-    ``log(0)`` errors.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-
-    Returns
-    -------
-    pandas.Series
-    """
-    log_mean = np.log(df[score_columns].fillna(0) + 1e-9).mean(axis=1)
-    return np.exp(log_mean)
-
-
-def weighted_voting(
+def compute_ensembles(
     df: pd.DataFrame,
-    score_columns: list[str],
-    weights: list[float] | None = None,
-) -> pd.Series:
-    """Weighted sum where each predictor is weighted by its correlation
-    with the column-wise mean score.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-    weights:
-        Optional explicit weights (must sum to 1).  When ``None``,
-        weights are derived from Pearson correlation with the mean.
-
-    Returns
-    -------
-    pandas.Series
-    """
-    if weights is None:
-        col_mean = df[score_columns].mean(axis=1)
-        corr = np.array([df[c].fillna(0).corr(col_mean) for c in score_columns])
-        corr = np.nan_to_num(corr, nan=0.0)
-        total = corr.sum()
-        weights = corr / total if total != 0 else np.ones(len(corr)) / len(corr)
-
-    return sum(w * df[c].fillna(0) for w, c in zip(weights, score_columns))
-
-
-def rank_aggregation(df: pd.DataFrame, score_columns: list[str]) -> pd.Series:
-    """Average of normalised rank positions across predictors.
-
-    Each predictor's scores are ranked in descending order and
-    normalised to ``[0, 1]``.  The final score is the mean of those
-    normalised ranks.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-
-    Returns
-    -------
-    pandas.Series
-    """
-    ranks = pd.DataFrame(
-        {
-            col: df[col].fillna(0).rank(ascending=False, method="average")
-            for col in score_columns
-        }
-    )
-    return 1.0 - ranks.div(len(df)).mean(axis=1)
-
-
-def majority_voting(
-    df: pd.DataFrame,
-    score_columns: list[str],
-    threshold: float = 0.5,
-) -> pd.Series:
-    """Fraction of predictors that classify a sequence as AMP.
-
-    A predictor votes "AMP" if its score exceeds ``threshold``.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-    threshold:
-        Decision boundary (default 0.5).
-
-    Returns
-    -------
-    pandas.Series
-        Values in ``[0, 1]``.
-    """
-    votes = pd.DataFrame(
-        {col: (df[col].fillna(0) > threshold).astype(int) for col in score_columns}
-    )
-    return votes.sum(axis=1) / len(score_columns)
-
-
-def stacking_ensemble(df: pd.DataFrame, score_columns: list[str]) -> pd.Series:
-    """Correlation-matrix-weighted sum across predictors.
-
-    Each predictor is weighted by the sum of its pairwise correlations
-    with all other predictors, rewarding predictors that agree with the
-    consensus.
-
-    Parameters
-    ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the columns to aggregate.
-
-    Returns
-    -------
-    pandas.Series
-    """
-    corr_matrix = df[score_columns].corr()
-    weights = corr_matrix.sum().values
-    total = weights.sum()
-    weights = weights / total if total != 0 else np.ones(len(weights)) / len(weights)
-    return sum(w * df[col].fillna(0) for w, col in zip(weights, score_columns))
-
-
-# ---------------------------------------------------------------------------
-# Convenience wrapper — applies all ensemble methods at once
-# ---------------------------------------------------------------------------
-
-
-def apply_ensemble(
-    df: pd.DataFrame,
-    score_columns: list[str],
-    membership: bool = False,
+    ensemble_names: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Append all ensemble summary columns to ``df``.
-
-    Columns added
-    -------------
-    * ``arithmetic_mean``
-    * ``geometric_mean``
-    * ``weighted_voting``
-    * ``rank_aggregation``
-    * ``majority_voting``
-    * ``stacking_ensemble``
-
-    And, when ``membership=True``, four fuzzy membership columns per
-    predictor score column.
+    """Compute validated ensemble scores and append them to the DataFrame.
 
     Parameters
     ----------
-    df:
-        DataFrame with predictor score columns.
-    score_columns:
-        Names of the predictor score columns.
-    membership:
-        If ``True``, add fuzzy membership columns for each predictor.
+    df : pd.DataFrame
+        Output of :func:`pega.utils.calculate_scores`.  Must contain the
+        predictor score columns referenced by the requested ensembles.
+    ensemble_names : list[str] or None
+        Names of ensembles to compute.  ``None`` computes all defined
+        ensembles.  Available: ``list(pega.ensemble.ENSEMBLES)``.
 
     Returns
     -------
-    pandas.DataFrame
-        The input DataFrame with new columns appended.
+    pd.DataFrame
+        Input DataFrame with one new column per ensemble.
+
+    Raises
+    ------
+    KeyError
+        If a requested ensemble name is not defined.
     """
-    df = df.copy()
+    names = ensemble_names or list(ENSEMBLES)
 
-    df["arithmetic_mean"] = arithmetic_mean(df, score_columns)
-    df["geometric_mean"] = geometric_mean(df, score_columns)
-    df["weighted_voting"] = weighted_voting(df, score_columns)
-    df["rank_aggregation"] = rank_aggregation(df, score_columns)
-    df["majority_voting"] = majority_voting(df, score_columns)
-    df["stacking_ensemble"] = stacking_ensemble(df, score_columns)
+    for name in names:
+        if name not in ENSEMBLES:
+            raise KeyError(
+                f"Ensemble '{name}' is not defined. "
+                f"Available: {list(ENSEMBLES)}"
+            )
 
-    if membership:
-        for col in score_columns:
-            df = add_membership_columns(df, col)
+        cfg = ENSEMBLES[name]
+        components = cfg["components"]
+        method     = cfg["method"]
+
+        # Verify all required columns are present
+        missing = [col for col, *_ in components if col not in df.columns]
+        if missing:
+            import warnings
+            warnings.warn(
+                f"Ensemble '{name}' skipped — missing columns: {missing}",
+                stacklevel=2,
+            )
+            continue
+
+        # Apply transformations
+        transformed: list[np.ndarray] = []
+        weights:     list[float]      = []
+
+        for col, transform, weight in components:
+            t = _apply_transform(df[col].fillna(0).values, transform, col)
+            transformed.append(t)
+            weights.append(weight)
+
+        # Combine
+        stack = np.vstack(transformed)   # shape: (n_predictors, n_sequences)
+        w     = np.array(weights)
+
+        if method == "weighted_mean":
+            w = w / w.sum()              # re-normalise to guard against rounding
+            df[name] = (w[:, None] * stack).sum(axis=0)
+        elif method == "mean":
+            df[name] = stack.mean(axis=0)
+        else:
+            raise ValueError(f"Unknown ensemble method '{method}'.")
 
     return df
+
+
+def list_ensembles() -> list[dict]:
+    """Return metadata for all defined ensembles.
+
+    Returns
+    -------
+    list[dict]
+        One dict per ensemble with keys ``name``, ``method``,
+        ``n_predictors``, ``description``, and ``metrics``.
+    """
+    return [
+        {
+            "name":          name,
+            "method":        cfg["method"],
+            "n_predictors":  len(cfg["components"]),
+            "description":   cfg["description"],
+            "metrics":       cfg["metrics"],
+        }
+        for name, cfg in ENSEMBLES.items()
+    ]

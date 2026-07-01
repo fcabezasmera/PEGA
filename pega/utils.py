@@ -177,4 +177,14 @@ def calculate_scores(
     if errors:
         print(f"\n  Failed: {', '.join(errors)}")
 
+    # ------------------------------------------------------------------
+    # Ensemble scores
+    # ------------------------------------------------------------------
+    try:
+        from pega.ensemble import compute_ensembles
+        merged = compute_ensembles(merged)
+    except Exception as exc:  # noqa: BLE001
+        import warnings
+        warnings.warn(f"Ensemble computation skipped: {exc}", stacklevel=2)
+
     return merged
