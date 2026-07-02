@@ -92,8 +92,32 @@ class AMPnetPredictor(BasePredictor):
                 matrix[i, _AA_INDEX[aa]] = 1.0
         return matrix
 
-    def score(self, fasta_path: str | Path, disable_tqdm: bool = False) -> pd.DataFrame:
-        """Score sequences with the AMPnet CNN.
+    @staticmethod
+    def _one_hot_batch(sequences: list[str]) -> np.ndarray:
+        """Encode a list of sequences as a single (N, MAX_LEN, 20) array."""
+        batch = np.zeros(
+            (len(sequences), _MAX_LEN, len(_AA_ORDER)), dtype=np.float32
+        )
+        for i, seq in enumerate(sequences):
+            for j, aa in enumerate(seq[:_MAX_LEN]):
+                if aa in _AA_INDEX:
+                    batch[i, j, _AA_INDEX[aa]] = 1.0
+        return batch
+
+    def score(
+        self,
+        fasta_path: str | Path,
+        batch_size: int = 512,
+    ) -> pd.DataFrame:
+        """Score sequences with the AMPnet CNN using batch prediction.
+
+        Parameters
+        ----------
+        fasta_path : str or Path
+            Input FASTA file.
+        batch_size : int
+            Sequences per inference batch. Default 512.
+            Increase for more RAM/VRAM; decrease if OOM errors occur.
 
         Returns
         -------
@@ -101,23 +125,24 @@ class AMPnetPredictor(BasePredictor):
             Columns: ``["seq_name", "AMPnet_score"]``.
         """
         fasta_path = self._validate_fasta(fasta_path)
-        model = self._load_model()
+        model      = self._load_model()
 
         records = list(SeqIO.parse(str(fasta_path), "fasta"))
         if not records:
             raise ValueError(f"No sequences found in {fasta_path}.")
 
-        names: list[str] = []
+        names  = [r.id for r in records]
+        seqs   = [str(r.seq).upper() for r in records]
         scores: list[float] = []
 
-        with tqdm(total=len(records), desc="AMPnet", unit="seq",
-                  disable=disable_tqdm) as pbar:
-            for record in records:
-                seq = str(record.seq).upper()
-                x = self._one_hot_pad(seq)[np.newaxis, ...]
-                pred = model.predict(x, verbose=0)
-                scores.append(float(pred.ravel()[0]))
-                names.append(record.id)
-                pbar.update(1)
+        n_batches = max(1, -(-len(seqs) // batch_size))  # ceil division
+
+        with tqdm(total=len(seqs), desc="AMPnet", unit="seq") as pbar:
+            for i in range(0, len(seqs), batch_size):
+                batch_seqs  = seqs[i : i + batch_size]
+                batch_array = self._one_hot_batch(batch_seqs)
+                preds       = model.predict(batch_array, verbose=0)
+                scores.extend(float(p.ravel()[0]) for p in preds)
+                pbar.update(len(batch_seqs))
 
         return pd.DataFrame({"seq_name": names, "AMPnet_score": scores})
