@@ -39,3 +39,5 @@ htmlcov/
 pega_amp.egg-info/
 PEGA_results_*.tsv
 pega/test.fasta
+PEGA_screen_*/
+pega/test1.fasta

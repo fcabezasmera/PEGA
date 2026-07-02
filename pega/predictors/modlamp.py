@@ -39,6 +39,9 @@ from pega.base import BasePredictor
 def _compute_descriptors(sequences: list[str], corr_window: int = 5) -> np.ndarray:
     """Compute PepCATS cross-correlation descriptors via modlAMP.
 
+    Sequences with non-canonical amino acids are skipped (NaN row).
+    
+
     Parameters
     ----------
     sequences:
@@ -53,9 +56,25 @@ def _compute_descriptors(sequences: list[str], corr_window: int = 5) -> np.ndarr
     """
     from modlamp.descriptors import PeptideDescriptor
 
-    descr = PeptideDescriptor(sequences, "pepcats")
+    _CANONICAL = set("ACDEFGHIKLMNPQRSTVWY")
+    valid_mask = [set(s.upper()).issubset(_CANONICAL) for s in sequences]
+    valid_seqs = [s for s, ok in zip(sequences, valid_mask) if ok]
+
+    if not valid_seqs:
+        return np.full((len(sequences), corr_window), np.nan)
+
+    descr = PeptideDescriptor(valid_seqs, "pepcats")
     descr.calculate_crosscorr(corr_window)
-    return descr.descriptor
+    valid_desc = descr.descriptor
+
+    # Reconstruct full array — NaN rows for non-canonical sequences
+    out = np.full((len(sequences), valid_desc.shape[1]), np.nan)
+    j = 0
+    for i, ok in enumerate(valid_mask):
+        if ok:
+            out[i] = valid_desc[j]
+            j += 1
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +150,13 @@ class ModlampRFPredictor(BasePredictor):
         scores: list[float] = []
         with tqdm(total=len(sequences), desc="modlAMP RF", unit="seq") as pbar:
             for i in range(len(sequences)):
-                prob = model.predict_proba(features[i].reshape(1, -1))[0]
+                if np.isnan(features[i]).any():
+                    scores.append(float("nan"))
+                    pbar.update(1)
+                    continue
+                from joblib import parallel_backend
+                with parallel_backend("sequential"):
+                    prob = model.predict_proba(features[i].reshape(1, -1))[0]
                 # Index 1 corresponds to the AMP class.
                 scores.append(float(prob[1]) if len(prob) > 1 else float(prob[0]))
                 pbar.update(1)
@@ -211,15 +236,15 @@ class ModlampSVMPredictor(BasePredictor):
 
         scores: list[float] = []
         with tqdm(total=len(sequences), desc="modlAMP SVM", unit="seq") as pbar:
+            from joblib import parallel_backend
             for i in range(len(sequences)):
-                # SVMs with probability=True expose predict_proba.
-                if hasattr(model, "predict_proba"):
-                    prob = model.predict_proba(features[i].reshape(1, -1))[0]
-                    scores.append(float(prob[1]) if len(prob) > 1 else float(prob[0]))
-                else:
-                    # Fallback: decision function normalised to [0, 1].
-                    decision = model.decision_function(features[i].reshape(1, -1))[0]
-                    scores.append(float(1 / (1 + np.exp(-decision))))
+                with parallel_backend("sequential"):
+                    if hasattr(model, "predict_proba"):
+                        prob = model.predict_proba(features[i].reshape(1, -1))[0]
+                        scores.append(float(prob[1]) if len(prob) > 1 else float(prob[0]))
+                    else:
+                        decision = model.decision_function(features[i].reshape(1, -1))[0]
+                        scores.append(float(1 / (1 + np.exp(-decision))))
                 pbar.update(1)
 
         return pd.DataFrame({"seq_name": names, "modlAMP_SVM_score": scores})
