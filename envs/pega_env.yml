@@ -4,33 +4,33 @@ channels:
   - bioconda
   - defaults
 
-# This is the main PEGA environment.
-# Activate it before running any pega command:
+# Main PEGA environment — tested on Python 3.10.
 #
+# After creating the environment:
 #   conda activate pega_env
-#   pip install -e /path/to/PEGA    # only once, after cloning the repo
+#   pip install -e /path/to/PEGA
 #
-# macrel_env and amplify_env are called internally by PEGA via
-# 'conda run' — they do not need to be activated manually.
+# Then run the post-install steps in the README (ampir, amPEPpy, modlAMP).
 
 dependencies:
-  - python=3.12
-  # core
+  - python=3.10          # pin to 3.10 — required for TF 2.17 + modlAMP compatibility
   - numpy=1.26.4
-  - joblib=1.4.2
+  - joblib>=1.3
   - tqdm
   - requests
-  # R for ampir predictors (run 'pega setup' to install the ampir package)
-  - r-base=4.4.2
-  # tensorflow CPU — swap for the gpu build if a CUDA-capable GPU is available
+  # R for ampir predictors
+  - r-base=4.4
+  - r-rlang>=1.1.7       # ampir requires >=1.1.7; pin here avoids post-install conflict
+  # TensorFlow CPU — swap tensorflow for tensorflow-gpu if CUDA is available
   - tensorflow=2.17.0
   - keras=3.7.0
   - pip
   - pip:
-      - biopython==1.84
-      - pandas==2.2.3
-      - scikit-learn==1.6.0
+      - biopython>=1.81
+      - pandas>=2.0
+      - scikit-learn>=1.3
       - torch==2.5.1
-      - transformers==4.47.0
-      - modlamp==4.3.0
-      - git+https://github.com/tlawrence3/amPEPpy.git
+      - transformers>=4.35
+      # modlAMP and amPEPpy must be installed AFTER env creation (see README)
+      # Do NOT add them here — modlAMP==4.3.0 has a broken mysql dependency
+      # and amPEPpy requires git+... which may fail in some network configurations
