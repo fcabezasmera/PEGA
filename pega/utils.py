@@ -145,7 +145,11 @@ def calculate_scores(
     # ------------------------------------------------------------------
     # Merge in original predictor order
     # ------------------------------------------------------------------
+    # Cast seq_name to str in all DataFrames before merging — some predictors
+    # may return numeric IDs as int64 when sequence names are plain numbers.
     ordered = [dfs[cls.name] for cls in predictor_classes if cls.name in dfs]
+    for df in ordered:
+        df["seq_name"] = df["seq_name"].astype(str)
     merged = ordered[0]
     for df in ordered[1:]:
         merged = pd.merge(merged, df, on="seq_name", how="outer")
@@ -163,6 +167,16 @@ def calculate_scores(
         merged["std_score"]       = scores.std(axis=1, ddof=0)  # population std (all predictors measured, not a sample)
         merged["consensus_score"] = 1 / (1 + merged["std_score"])
 
+
+    if errors:
+        print(f"\n  Failed: {', '.join(errors)}")
+
+    # ------------------------------------------------------------------
+    # Ensemble scores (before export so columns appear in TSV)
+    # ------------------------------------------------------------------
+    from pega.ensemble import compute_ensembles
+    merged = compute_ensembles(merged)
+
     # ------------------------------------------------------------------
     # Export — always save to TSV (default name if not specified)
     # ------------------------------------------------------------------
@@ -172,19 +186,7 @@ def calculate_scores(
 
     out_path = Path(export_tsv)
     merged.to_csv(out_path, sep="\t", index=False)
-    print(f"\n  Saved → {out_path}  ({len(merged)} sequences × {len(merged.columns)-1} predictors)")
-
-    if errors:
-        print(f"\n  Failed: {', '.join(errors)}")
-
-    # ------------------------------------------------------------------
-    # Ensemble scores
-    # ------------------------------------------------------------------
-    try:
-        from pega.ensemble import compute_ensembles
-        merged = compute_ensembles(merged)
-    except Exception as exc:  # noqa: BLE001
-        import warnings
-        warnings.warn(f"Ensemble computation skipped: {exc}", stacklevel=2)
+    n_pred = len([c for c in merged.columns if c != "seq_name"])
+    print(f"\n  Saved → {out_path}  ({len(merged)} sequences, {n_pred} columns)")
 
     return merged
