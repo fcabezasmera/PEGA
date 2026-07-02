@@ -16,13 +16,17 @@ import argparse
 import sys
 from pathlib import Path
 
-import pega
-
 # ---------------------------------------------------------------------------
-# ASCII banner
+# ASCII banner — lazy to avoid AttributeError on import
 # ---------------------------------------------------------------------------
 
-_BANNER = f"""
+def _get_banner() -> str:
+    try:
+        import pega as _pega
+        version = _pega.__version__
+    except AttributeError:
+        version = "0.1.0"
+    return f"""
  ██████╗ ███████╗ ██████╗  █████╗ 
  ██╔══██╗██╔════╝██╔════╝ ██╔══██╗
  ██████╔╝█████╗  ██║  ███╗███████║
@@ -33,7 +37,7 @@ _BANNER = f"""
                                          ██╔══╝   ██╔╝   
                                          ╚═╝      ╚═╝    
 
- Peptide Evolution via Genetic Algorithm  v{pega.__version__}
+ Peptide Evolution via Genetic Algorithm  v{{version}}
  https://github.com/fcabezasmera/PEGA
 """
 
@@ -79,10 +83,20 @@ def _fasta_stats(fasta_path: Path) -> dict:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    from pega.registry import registry
     if not args.quiet:
-        print(_BANNER)
-    print(registry.summary())
+        print(_get_banner())
+    if args.ensembles:
+        from pega.ensemble import list_ensembles, ENSEMBLES
+        print(f"  {'Name':<24}  {'Method':<14}  {'Pred':>4}  {'MCC':>6}  {'AUC':>6}  Description")
+        print("  " + "─" * 82)
+        for e in list_ensembles():
+            print(f"  {e['name']:<24}  {e['method']:<14}  {e['n_predictors']:>4}  "
+                  f"{e['metrics']['mcc']:>6.3f}  {e['metrics']['auc']:>6.3f}  "
+                  f"{e['description'][:40]}")
+        print(f"\n  {len(ENSEMBLES)} ensembles available.")
+    else:
+        from pega.registry import registry
+        print(registry.summary())
     return 0
 
 
@@ -100,7 +114,16 @@ def cmd_score(args: argparse.Namespace) -> int:
     predictors = args.predictors or None
 
     if not args.quiet:
-        print(_BANNER)
+        print(_get_banner())
+
+    # Parse --ensemble argument
+    ensemble_arg = args.ensemble
+    if ensemble_arg is None:
+        ensemble_names = None          # all
+    elif len(ensemble_arg) == 1 and ensemble_arg[0].lower() == "none":
+        ensemble_names = []            # skip all
+    else:
+        ensemble_names = ensemble_arg  # specific list
 
     try:
         df = calculate_scores(
@@ -109,6 +132,7 @@ def cmd_score(args: argparse.Namespace) -> int:
             export_tsv=args.out,
             jobs=args.jobs,
             quiet=args.quiet,
+            ensemble_names=ensemble_names,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -117,10 +141,43 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_screen(args: argparse.Namespace) -> int:
+    """Chunked screening for large FASTA files."""
+    if args.quiet:
+        _suppress_warnings()
+
+    from pega.utils import screen_sequences
+
+    fasta = Path(args.fasta)
+    if not fasta.exists():
+        print(f"Error: FASTA file not found: {fasta}", file=sys.stderr)
+        return 1
+
+    if not args.quiet:
+        print(_get_banner())
+
+    ensemble_names = None
+    if hasattr(args, "ensembles") and args.ensembles:
+        ensemble_names = [
+            f"ensemble_{e}_score" if not e.startswith("ensemble_") else e
+            for e in args.ensembles
+        ]
+
+    screen_sequences(
+        fasta_path=fasta,
+        output_dir=getattr(args, "dir", None),
+        chunk_size=args.chunk,
+        ensemble_names=ensemble_names,
+        no_individual_scores=getattr(args, "no_individual_scores", False),
+        jobs=args.jobs,
+    )
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     from pega.preprocess.validator import validate_fasta
     if not args.quiet:
-        print(_BANNER)
+        print(_get_banner())
     ok, _ = validate_fasta(Path(args.fasta), verbose=True)
     return 0 if ok else 1
 
@@ -128,7 +185,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_setup(args: argparse.Namespace) -> int:
     from pega.setup_envs import print_status, setup_all
     if not args.quiet:
-        print(_BANNER)
+        print(_get_banner())
     if args.status:
         print("Environment status:\n")
         print_status()
@@ -140,7 +197,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 def cmd_download_models(args: argparse.Namespace) -> int:
     from pega.download_models import download_models
     if not args.quiet:
-        print(_BANNER)
+        print(_get_banner())
     download_models(model_dir=args.dir, overwrite=args.overwrite)
     return 0
 
@@ -164,18 +221,22 @@ def _build_parser() -> argparse.ArgumentParser:
             "  PEGA score --fasta sequences.fasta --predictors AMPnet modlAMP_RF\n"
             "  PEGA score --fasta sequences.fasta --out results.tsv --jobs 4\n"
             "  PEGA score --fasta sequences.fasta --quiet\n"
+            "  PEGA score --fasta sequences.fasta --ensembles AMP\n"
+            "  PEGA score --fasta sequences.fasta --ensembles AMP AVP AFP ABP --no-individual-scores\n"
             "  PEGA setup --status\n"
             "  PEGA download-models\n"
         ),
     )
     parser.add_argument("--version", action="version",
-                        version=f"PEGA.py {pega.__version__}")
+                        version="PEGA.py 0.1.0")
 
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
 
     # list
     lp = sub.add_parser("list", help="Show all predictors and their availability.")
+    lp.add_argument("--ensembles", action="store_true", default=False,
+                    help="Show available ensemble scores instead of predictors.")
     lp.add_argument("-q", "--quiet", action="store_true", default=False)
 
     # score
@@ -189,6 +250,32 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Parallel workers. Use -1 for 75%% of available CPU threads. Default: 1 (sequential).")
     sp.add_argument("-q", "--quiet", action="store_true", default=False,
                     help="Suppress banner and framework warnings.")
+
+    # screen
+    scrp = sub.add_parser(
+        "screen",
+        help="Score a large FASTA file in chunks (100k–1M+ sequences).",
+        description=(
+            "Chunked screening mode for large datasets. "
+            "Results are written to TSV progressively — "
+            "safe to interrupt and resume."
+        ),
+    )
+    scrp.add_argument("--fasta", "-f", required=True, metavar="FILE")
+    scrp.add_argument("--dir", metavar="PATH",
+                      help="Output directory. Default: PEGA_screen_YYYYMMDD_HHMMSS/ "
+                           "Contains: names.tsv, rejected.tsv, rejected.fasta, scores.tsv")
+    scrp.add_argument("--chunk", type=int, default=50_000, metavar="N",
+                      help="Sequences per chunk (default: 50,000). Reduce to 10,000 if RAM < 16 GB. "
+                           "Increase to 50,000 if you have ≥32 GB RAM.")
+    scrp.add_argument("--ensembles", "-e", nargs="+", metavar="NAME",
+                      help="Only compute specific ensembles (AMP AVP AFP ABP). "
+                           "Auto-selects required predictors.")
+    scrp.add_argument("--no-individual-scores", action="store_true", default=False,
+                      help="Output only ensemble columns.")
+    scrp.add_argument("--jobs", "-j", type=int, default=-1, metavar="N",
+                      help="Parallel workers. Default: -1 (75%% of CPU threads).")
+    scrp.add_argument("-q", "--quiet", action="store_true", default=False)
 
     # validate
     vp = sub.add_parser("validate", help="Validate a FASTA file before scoring.")
@@ -215,6 +302,7 @@ def _build_parser() -> argparse.ArgumentParser:
 _HANDLERS = {
     "list":            cmd_list,
     "score":           cmd_score,
+    "screen":          cmd_screen,
     "validate":        cmd_validate,
     "setup":           cmd_setup,
     "download-models": cmd_download_models,
