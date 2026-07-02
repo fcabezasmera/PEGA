@@ -192,7 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--out", "-o", metavar="FILE",
                     help="Output TSV file path. Default: PEGA_results_<timestamp>.tsv")
     sp.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
-                    help="Parallel workers. Use -1 for all CPU threads. Default: 1.")
+                    help="Parallel workers. Use -1 for 75%% of available CPU threads. Default: 1 (sequential).")
     sp.add_argument("-q", "--quiet", action="store_true", default=False,
                     help="Suppress banner and framework warnings.")
 

@@ -89,7 +89,8 @@ def calculate_scores(
     # Run predictors
     # ------------------------------------------------------------------
     import os
-    max_workers = os.cpu_count() if jobs == -1 else max(1, jobs)
+    _cpus = os.cpu_count() or 1
+    max_workers = max(1, int(_cpus * 0.75)) if jobs == -1 else max(1, jobs)
     dfs: dict[str, pd.DataFrame] = {}
     errors: dict[str, str] = {}
 
