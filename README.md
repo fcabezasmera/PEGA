@@ -79,6 +79,10 @@ cd PEGA
 > Model weights (~106 MB) are stored via Git LFS and downloaded automatically.
 > If LFS is not available: `PEGA download-models` after installation.
 
+> **Remote machines / SSH nodes**: the installation procedure is identical —
+> run all steps on the target node after connecting via SSH.
+> No scheduler-specific configuration is needed.
+
 ### Step 2 — Main environment
 
 ```bash
@@ -89,21 +93,46 @@ PEGA --version
 PEGA list
 ```
 
+> The yml pins **Python 3.10** — required for TensorFlow 2.17 and modlAMP
+> compatibility. Do not change this to 3.11/3.12.
+
 ### Step 3 — ampir (R package)
 
 ```bash
 conda activate pega_env
+
+# Update r-rlang first — ampir requires >=1.1.7, conda may install an older version
+conda install -n pega_env -c conda-forge r-rlang -y
+
+# Install R dependencies
 conda install -n pega_env -c conda-forge \
     r-caret r-data.table r-recipes r-modelmetrics r-ipred -y
+
+# Install ampir from CRAN
 $CONDA_PREFIX/bin/Rscript -e \
     'install.packages("ampir", repos="https://cloud.r-project.org")'
 ```
+
+> **If you see** `namespace 'rlang' X.X.X is already loaded, but >= 1.1.7 is required`:
+> the `r-rlang` update above fixes this. If the error persists, restart the R session
+> and try again.
 
 ### Step 4 — amPEPpy
 
 ```bash
 conda activate pega_env
 pip install git+https://github.com/tlawrence3/amPEPpy.git
+```
+
+### Step 4b — modlAMP
+
+modlAMP **cannot** be installed via the `pega_env.yml` (its pinned
+`mysql-connector-python==8.0.17` dependency does not exist on PyPI).
+Install it separately after the environment is created:
+
+```bash
+conda activate pega_env
+pip install modlamp
 ```
 
 ### Step 5 — External predictor environments
@@ -120,185 +149,6 @@ conda activate amplify_env
 mamba install bioconda::amplify
 conda deactivate
 ```
-
----
-
-## Installation — HPC Cluster
-
-This section covers installation on a cluster with **conda + mamba** available
-and **internet access** on login and compute nodes.
-
-> All installation steps must be run on the **login node**.
-> Never run heavy computations directly on the login node — use job scripts.
-
-### Step 1 — Clone the repository
-
-```bash
-# Choose a location with enough space (~500 MB for envs + models)
-cd $HOME   # or /scratch/$USER if HOME has quota limits
-git clone https://github.com/fcabezasmera/PEGA.git
-cd PEGA
-```
-
-### Step 2 — Choose a conda prefix (important on clusters)
-
-If your `$HOME` has disk quotas, install environments in scratch or a project directory:
-
-```bash
-# Check available space
-df -h $HOME
-df -h /scratch/$USER   # or your cluster's scratch path
-
-# Option A — install in HOME (default)
-conda env create -f envs/pega_env.yml
-
-# Option B — install in custom prefix (if HOME is limited)
-conda env create -f envs/pega_env.yml --prefix /scratch/$USER/envs/pega_env
-conda activate /scratch/$USER/envs/pega_env
-```
-
-> If using `--prefix`, replace `conda activate pega_env` with
-> `conda activate /scratch/$USER/envs/pega_env` everywhere below.
-
-### Step 3 — Install PEGA
-
-```bash
-conda activate pega_env
-pip install -e $HOME/PEGA    # adjust path if you cloned elsewhere
-PEGA --version
-```
-
-### Step 4 — Install ampir, amPEPpy, Macrel, AMPlify
-
-Same as local installation (Steps 3–5 above). Run these on the **login node**:
-
-```bash
-# ampir
-conda activate pega_env
-conda install -n pega_env -c conda-forge \
-    r-caret r-data.table r-recipes r-modelmetrics r-ipred -y
-$CONDA_PREFIX/bin/Rscript -e \
-    'install.packages("ampir", repos="https://cloud.r-project.org")'
-
-# amPEPpy
-pip install git+https://github.com/tlawrence3/amPEPpy.git
-
-# Macrel
-conda create --name macrel_env -c bioconda -c conda-forge macrel -y
-
-# AMPlify
-conda create -n amplify_env python=3.6 -y
-conda activate amplify_env
-mamba install bioconda::amplify
-conda deactivate
-```
-
-### Step 5 — Model weights
-
-```bash
-conda activate pega_env
-PEGA download-models
-# or if using git LFS:
-git lfs pull
-```
-
-### Step 6 — Verify installation
-
-```bash
-conda activate pega_env
-PEGA list
-```
-
-All 10 predictors should show `[available]`.
-
----
-
-### Running PEGA on the cluster
-
-#### Interactive session (testing)
-
-```bash
-# Request an interactive node — syntax varies by cluster
-# SLURM:
-srun --ntasks=1 --cpus-per-task=24 --mem=32G --time=02:00:00 --pty bash
-
-# PBS:
-qsub -I -l nodes=1:ppn=24,mem=32gb,walltime=02:00:00
-
-# Once on the compute node:
-conda activate pega_env
-PEGA score --fasta sequences.fasta --jobs -1 --quiet
-```
-
-#### Job script — standard scoring
-
-Save as `pega_score.sh`:
-
-```bash
-#!/bin/bash
-#SBATCH --job-name=pega_score
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=32G
-#SBATCH --time=04:00:00
-#SBATCH --output=pega_%j.log
-
-# Activate environment
-source $(conda info --base)/etc/profile.d/conda.sh
-conda activate pega_env
-
-# Run scoring
-PEGA score \
-    --fasta sequences.fasta \
-    --ensembles AMP AVP AFP ABP \
-    --no-individual-scores \
-    --jobs -1 \
-    --quiet
-```
-
-Submit:
-```bash
-sbatch pega_score.sh            # SLURM
-qsub pega_score.sh              # PBS
-bsub < pega_score.sh            # LSF
-```
-
-#### Job script — large dataset screening (1M+ sequences)
-
-Save as `pega_screen.sh`:
-
-```bash
-#!/bin/bash
-#SBATCH --job-name=pega_screen
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=64G
-#SBATCH --time=48:00:00
-#SBATCH --output=pega_screen_%j.log
-
-source $(conda info --base)/etc/profile.d/conda.sh
-conda activate pega_env
-
-PEGA screen \
-    --fasta /path/to/large_dataset.fasta \
-    --chunk 50000 \
-    --ensembles AMP AVP AFP ABP \
-    --no-individual-scores \
-    --dir /scratch/$USER/pega_results/ \
-    --quiet
-```
-
-> **Tip:** Use `--dir /scratch/$USER/...` to write output to scratch — home
-> directories often have I/O rate limits that slow TSV writing.
-
-#### Recommended resources by dataset size
-
-| Sequences | `--chunk` | RAM | CPUs | Est. time (ensembles only) |
-|-----------|-----------|-----|------|---------------------------|
-| < 10,000 | — (use `PEGA score`) | 16 GB | 12 | < 30 min |
-| 10k–100k | 10,000 | 32 GB | 24 | 2–4 h |
-| 100k–1M | 50,000 | 64 GB | 24 | 8–24 h |
-| > 1M | 100,000 | 128 GB | 32 | > 24 h |
 
 ---
 
