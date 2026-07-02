@@ -18,6 +18,50 @@ import pandas as pd
 from pega.registry import registry
 
 
+def _deduplicate_fasta(fasta_path: Path) -> Path:
+    """Return path to a FASTA with unique seq_names.
+
+    If all IDs are already unique, returns the original path unchanged.
+    If duplicates are found, writes a temp FASTA with suffixed IDs
+    (e.g. ``seq_1``, ``seq_2``) and returns that path.
+    """
+    from Bio import SeqIO
+    from Bio.SeqRecord import SeqRecord
+    import tempfile
+
+    records = list(SeqIO.parse(str(fasta_path), "fasta"))
+    ids = [r.id for r in records]
+
+    if len(ids) == len(set(ids)):
+        return fasta_path   # all unique, nothing to do
+
+    # Count duplicates and build unique names
+    seen: dict[str, int] = {}
+    new_records = []
+    renamed = 0
+    for rec in records:
+        if ids.count(rec.id) > 1:
+            seen[rec.id] = seen.get(rec.id, 0) + 1
+            new_id = f"{rec.id}_{seen[rec.id]}"
+            renamed += 1
+        else:
+            new_id = rec.id
+        new_records.append(SeqRecord(rec.seq, id=new_id, description=""))
+
+    print(
+        f"  [info] {renamed} duplicate seq_name(s) found and renamed "
+        f"(e.g. seq_1, seq_2) to avoid merge conflicts.",
+        file=sys.stderr,
+    )
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".fasta", delete=False, prefix="pega_dedup_"
+    )
+    SeqIO.write(new_records, tmp, "fasta")
+    tmp.close()
+    return Path(tmp.name)
+
+
 def _progress(current: int, total: int, name: str, elapsed: float | None = None) -> None:
     width = len(str(total))
     time_str = f"  {elapsed:.1f}s" if elapsed is not None else ""
@@ -62,6 +106,15 @@ def calculate_scores(
                 "FASTA file contains invalid sequences. "
                 "Run 'PEGA validate --fasta ...' for details."
             )
+
+    # ------------------------------------------------------------------
+    # Deduplicate seq_names — duplicate IDs cause Cartesian product on merge
+    # ------------------------------------------------------------------
+    _tmp_fasta: Path | None = None
+    _dedup = _deduplicate_fasta(fasta_path)
+    if _dedup != fasta_path:
+        _tmp_fasta = _dedup
+    fasta_path = _dedup
 
     # ------------------------------------------------------------------
     # Resolve predictor set
@@ -189,5 +242,10 @@ def calculate_scores(
     merged.to_csv(out_path, sep="\t", index=False)
     n_pred = len([c for c in merged.columns if c != "seq_name"])
     print(f"\n  Saved → {out_path}  ({len(merged)} sequences, {n_pred} columns)")
+
+    # Clean up temp deduplicated FASTA if created
+    if _tmp_fasta is not None and _tmp_fasta.exists():
+        import os as _os
+        _os.unlink(_tmp_fasta)
 
     return merged

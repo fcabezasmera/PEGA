@@ -66,6 +66,10 @@ def validate_fasta(
     if not records:
         return False, "No sequences found. Check FASTA format."
 
+    # Duplicate seq_names
+    ids = [r.id for r in records]
+    dup_ids = [i for i in set(ids) if ids.count(i) > 1]
+
     short, noncanonical, ambiguous, stop_codon = [], {}, {}, []
 
     for rec in records:
