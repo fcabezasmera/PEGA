@@ -114,12 +114,6 @@ def cmd_score(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    # Preview — first 10 rows only
-    n = len(df)
-    print()
-    print(df.head(10).to_string(index=False))
-    if n > 10:
-        print(f"  ... {n - 10} more rows in output file.")
     return 0
 
 
