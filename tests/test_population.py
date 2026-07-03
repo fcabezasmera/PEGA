@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # ── Mock calculate_scores so we don't need the real predictors ──────────────
 from Bio import SeqIO
 
-def _mock_calculate_scores(fasta_path, predictor_names=None, jobs=1, validate=False):
+def _mock_calculate_scores(fasta_path, predictor_names=None, jobs=1, validate=False, **_kwargs):
     records = list(SeqIO.parse(str(fasta_path), "fasta"))
     n = len(records)
     rng = np.random.default_rng(42)

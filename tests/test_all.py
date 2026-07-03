@@ -340,10 +340,11 @@ def main() -> int:
         print("  [SKIP] no ensembles computed (insufficient predictors available)")
 
     # Verify mathematical correctness on first row: mean_geometric is the
-    # geometric mean of the individual predictor scores.
+    # geometric mean of the individual predictor scores (NaN scores are
+    # treated as 0, matching pega.population.compute_fitness).
     row = df.iloc[0]
-    raw = row[score_cols].values.astype(float)
-    expected_fitness = np.exp(np.mean(np.log(np.clip(raw, 0, None) + 1e-9)))
+    raw = row[score_cols].fillna(0).clip(lower=0).values.astype(float)
+    expected_fitness = np.exp(np.mean(np.log(raw + 1e-9)))
     check(abs(row["mean_geometric"] - expected_fitness) < 1e-6,
           "mean_geometric correct (geometric mean)")
 

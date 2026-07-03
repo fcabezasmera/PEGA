@@ -288,6 +288,7 @@ def score_sequences(
             predictor_names=predictor_names,
             jobs=jobs,
             validate=False,
+            _skip_prepare=True,
         )
     finally:
         os.unlink(tmp_path)
