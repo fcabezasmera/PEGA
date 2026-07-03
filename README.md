@@ -148,8 +148,30 @@ pip install git+https://github.com/tlawrence3/amPEPpy.git
 
 **Macrel** (predictor 6):
 ```bash
-conda create --name macrel_env -c bioconda -c conda-forge macrel -y
+conda env create -f envs/macrel_env.yml
 ```
+
+> Use the pinned `envs/macrel_env.yml`, not a bare `conda create -n
+> macrel_env macrel`. Macrel bundles a pre-trained scikit-learn model, and
+> loading it with a different scikit-learn/numpy/scipy version than the
+> one it was validated against can silently change its predictions for
+> the same input — no error, just wrong scores. This has been observed
+> in practice between two machines both running `macrel=1.6.0`, purely
+> from unpinned transitive dependencies resolving differently.
+>
+> **Always verify after installing** (or after recreating this
+> environment on a new node) by scoring a known reference AMP and
+> confirming the result looks sane, e.g.:
+> ```bash
+> echo -e ">magainin2\nGIGKFLHSAKKFGKAFVGEIMNS" > _ref_amp.fasta
+> conda run -n macrel_env macrel peptides --fasta _ref_amp.fasta --output _ref_out --keep-negatives
+> gzip -d _ref_out/macrel.out.prediction.gz && cat _ref_out/macrel.out.prediction
+> rm -rf _ref_amp.fasta _ref_out
+> ```
+> `is_AMP` should be `True` with a clearly positive `AMP_probability`
+> (well above 0). If you see `False` with a value near 0, your
+> `macrel_env` dependencies have drifted — recreate it from the pinned
+> yml above rather than trusting the scores.
 
 **AMPlify** (predictors 7 & 8) — requires Python 3.6, use mamba:
 ```bash
