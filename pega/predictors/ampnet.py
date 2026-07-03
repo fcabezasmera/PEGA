@@ -54,6 +54,10 @@ class AMPnetPredictor(BasePredictor):
     _model = None
 
     @classmethod
+    def score_column(cls) -> str:
+        return "AMPnet_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         try:
             import tensorflow  # noqa: F401

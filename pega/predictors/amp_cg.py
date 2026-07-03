@@ -98,6 +98,10 @@ class AMPCGPredictor(BasePredictor):
     _device = None
 
     @classmethod
+    def score_column(cls) -> str:
+        return "AMP_CG_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         try:
             import torch          # noqa: F401

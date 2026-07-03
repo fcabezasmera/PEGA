@@ -48,6 +48,10 @@ class AmPEPpyPredictor(BasePredictor):
     category = "pip"
 
     @classmethod
+    def score_column(cls) -> str:
+        return "amPEPpy_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         return cls._executable_on_path("ampep")
 

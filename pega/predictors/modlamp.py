@@ -98,6 +98,10 @@ class ModlampRFPredictor(BasePredictor):
     _model = None
 
     @classmethod
+    def score_column(cls) -> str:
+        return "modlAMP_RF_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         try:
             import modlamp   # noqa: F401
@@ -183,6 +187,10 @@ class ModlampSVMPredictor(BasePredictor):
     category = "pip"
 
     _model = None
+
+    @classmethod
+    def score_column(cls) -> str:
+        return "modlAMP_SVM_score"
 
     @classmethod
     def is_available(cls) -> bool:

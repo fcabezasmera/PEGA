@@ -105,6 +105,10 @@ class AmplifyBalancedPredictor(BasePredictor):
     category = "conda"
 
     @classmethod
+    def score_column(cls) -> str:
+        return "AMPlify_balanced_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         if not cls._executable_on_path("conda"):
             return False
@@ -133,6 +137,10 @@ class AmplifyImbalancedPredictor(BasePredictor):
     predictor_id = 8
     description = "Deep learning AMP predictor — imbalanced model (AMPlify / conda)."
     category = "conda"
+
+    @classmethod
+    def score_column(cls) -> str:
+        return "AMPlify_imbalanced_score"
 
     @classmethod
     def is_available(cls) -> bool:

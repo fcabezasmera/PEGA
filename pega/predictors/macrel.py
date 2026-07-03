@@ -57,6 +57,10 @@ class MacrelPredictor(BasePredictor):
     category = "conda"
 
     @classmethod
+    def score_column(cls) -> str:
+        return "Macrel_score"
+
+    @classmethod
     def is_available(cls) -> bool:
         if not cls._executable_on_path("conda"):
             return False
