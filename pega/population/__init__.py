@@ -297,54 +297,48 @@ def score_sequences(
     scored["seq_aa"] = scored["seq_name"].map(seq_map)
     scored = compute_fitness(scored)
 
-    # Reorder: identifiers → fitness → predictor scores → summary stats
-    summary_cols = ["mean_score", "geomean_score", "median_score",
-                    "min_score", "std_score", "consensus_score"]
-    predictor_score_cols = [c for c in scored.columns
-                            if c.endswith("_score") and c not in summary_cols]
-    present_summary = [c for c in summary_cols if c in scored.columns]
+    # Reorder: identifiers → fitness → predictor scores → ensembles
+    predictor_cols = [c for c in scored.columns
+                      if c.endswith("_score") and not c.startswith("ensemble_")]
+    ensemble_cols  = [c for c in scored.columns if c.startswith("ensemble_")]
 
     cols = (
         ["seq_name", "seq_aa", "mean_geometric"]
-        + predictor_score_cols
-        + present_summary
+        + predictor_cols
+        + ensemble_cols
     )
     cols = [c for c in cols if c in scored.columns]
     return scored[cols].reset_index(drop=True)
 
 
 def compute_fitness(df: pd.DataFrame) -> pd.DataFrame:
-    """Set ``mean_geometric`` fitness from ``geomean_score`` or recompute it.
+    """Compute geometric mean fitness across predictor score columns.
 
-    If ``geomean_score`` is present (computed by ``calculate_scores``), it is
-    copied directly.  Otherwise the geometric mean is computed from the
-    individual predictor score columns.
-
-    The geometric mean is the fitness value consumed by selection operators
-    in ``pega.operators.selection``.
+    Uses individual predictor ``*_score`` columns (excluding ensemble
+    columns) to compute the geometric mean, which is stored as
+    ``mean_geometric`` and consumed by ``pega.operators.selection``.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Population DataFrame, typically the output of ``score_sequences()``.
+        Population DataFrame from ``score_sequences()``.
 
     Returns
     -------
     pd.DataFrame
-        Input DataFrame with a ``mean_geometric`` column added or updated.
+        Input DataFrame with ``mean_geometric`` added or updated.
     """
-    if "geomean_score" in df.columns:
-        df["mean_geometric"] = df["geomean_score"]
-        return df
-
-    score_cols = [c for c in df.columns
-                  if c.endswith("_score") and c not in (
-                      "mean_score", "geomean_score", "median_score",
-                      "min_score", "std_score", "consensus_score",
-                  )]
+    # Ensemble columns and id columns are excluded
+    exclude = {"seq_name", "seq_aa", "original_header", "mean_geometric"}
+    score_cols = [
+        c for c in df.columns
+        if c.endswith("_score") and not c.startswith("ensemble_")
+        and c not in exclude
+    ]
     if not score_cols:
         raise ValueError(
-            "No predictor '*_score' columns found. Run score_sequences() first."
+            "No individual predictor '*_score' columns found. "
+            "Run score_sequences() first."
         )
     log_scores = np.log(df[score_cols].fillna(0).clip(lower=0) + 1e-9)
     df["mean_geometric"] = np.exp(log_scores.mean(axis=1))
