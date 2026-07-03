@@ -76,8 +76,10 @@ git clone https://github.com/fcabezasmera/PEGA.git
 cd PEGA
 ```
 
-> Model weights (~106 MB) are stored via Git LFS and downloaded automatically.
-> If LFS is not available: `PEGA download-models` after installation.
+> Model weights (~106 MB) are stored via Git LFS. If `git-lfs` isn't
+> installed when you clone, you'll silently get small placeholder files
+> instead of the real weights — run `PEGA download-models` (Step 2 below)
+> to fix this regardless of whether LFS worked.
 
 > **Remote machines / SSH nodes**: the installation procedure is identical —
 > run all steps on the target node after connecting via SSH.
@@ -89,12 +91,23 @@ cd PEGA
 conda env create -f envs/pega_env.yml
 conda activate pega_env
 pip install -e .
+PEGA download-models
 PEGA --version
 PEGA list
 ```
 
-> The yml pins **Python 3.10** — required for TensorFlow 2.17 and modlAMP
+> `PEGA download-models` always verifies the model files, even if
+> `git clone` already ran — it detects and replaces Git LFS pointer stubs
+> automatically, so this step is safe (and a no-op) whether or not LFS
+> worked during cloning.
+
+> The yml pins **Python 3.10** — required for TensorFlow and modlAMP
 > compatibility. Do not change this to 3.11/3.12.
+>
+> **No root/sudo required** anywhere in this installation — conda
+> environments, pip packages, and R packages (via CRAN) all install into
+> your own user-owned prefixes. This works the same way on a shared
+> cluster node as on a personal machine.
 
 ### Step 3 — ampir (R package)
 
@@ -119,21 +132,17 @@ $CONDA_PREFIX/bin/Rscript -e \
 
 ### Step 4 — amPEPpy
 
+amPEPpy is not published on PyPI, so it isn't in `pega_env.yml` — install
+it from its git repository after the environment is created:
+
 ```bash
 conda activate pega_env
 pip install git+https://github.com/tlawrence3/amPEPpy.git
 ```
 
-### Step 4b — modlAMP
-
-modlAMP **cannot** be installed via the `pega_env.yml` (its pinned
-`mysql-connector-python==8.0.17` dependency does not exist on PyPI).
-Install it separately after the environment is created:
-
-```bash
-conda activate pega_env
-pip install modlamp
-```
+> If this fails on a cluster node with restricted outbound git access,
+> download the repository as a tarball on a machine with normal GitHub
+> access and `pip install` the local copy instead.
 
 ### Step 5 — External predictor environments
 
