@@ -4,33 +4,35 @@ channels:
   - bioconda
   - defaults
 
-# Main PEGA environment — tested on Python 3.10.
+# Main PEGA environment.
+# Versions below are pinned to a combination verified end-to-end
+# (all 10 predictors scoring successfully, PEGA v0.1.0).
 #
 # After creating the environment:
 #   conda activate pega_env
 #   pip install -e /path/to/PEGA
 #
-# Then run the post-install steps in the README (ampir, amPEPpy, modlAMP).
+# Then run the post-install steps in the README (ampir, amPEPpy).
 
 dependencies:
-  - python=3.10          # pin to 3.10 — required for TF 2.17 + modlAMP compatibility
-  - numpy=1.26.4
+  - python=3.10          # pin to 3.10 — required for TensorFlow + modlAMP compatibility
+  - numpy=2.2
   - joblib>=1.3
   - tqdm
   - requests
   # R for ampir predictors
-  - r-base=4.4
+  - r-base=4.5
   - r-rlang>=1.1.7       # ampir requires >=1.1.7; pin here avoids post-install conflict
-  # TensorFlow CPU — swap tensorflow for tensorflow-gpu if CUDA is available
-  - tensorflow=2.17.0
-  - keras=3.7.0
+  # Deep learning stack — CPU-only nodes run these fine; conda-forge's
+  # builds fall back to CPU automatically when no GPU/CUDA driver is present.
+  - tensorflow=2.19
+  - keras=3.12
+  - pytorch=2.10
+  - transformers>=4.35
   - pip
   - pip:
       - biopython>=1.81
       - pandas>=2.0
       - scikit-learn>=1.3
-      - torch==2.5.1
-      - transformers>=4.35
-      # modlAMP and amPEPpy must be installed AFTER env creation (see README)
-      # Do NOT add them here — modlAMP==4.3.0 has a broken mysql dependency
-      # and amPEPpy requires git+... which may fail in some network configurations
+      - modlamp>=4.3.2
+      # amPEPpy is not published on PyPI — must be installed from git (see README)
