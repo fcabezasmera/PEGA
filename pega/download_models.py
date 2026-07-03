@@ -40,13 +40,28 @@ _MODELS = [
     "amPEP.model",             # amPEPpy
     "modlamp_RF.joblib",       # modlAMP RF
     "modlamp_SVM.joblib",      # modlAMP SVM
-    "PC6_final_8.h5",          # AMPlify-related
 ]
 
 _BASE_URL = (
     f"https://github.com/{_GITHUB_USER}/{_GITHUB_REPO}"
     f"/releases/download/{_RELEASE_TAG}"
 )
+
+# A file this small can only be a Git LFS pointer stub (real weights are
+# multiple MB), left behind when `git clone` ran without LFS support.
+_LFS_POINTER_MAX_SIZE = 200
+_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+
+
+def _is_lfs_pointer_stub(path: Path) -> bool:
+    """Return True if ``path`` is a Git LFS pointer file, not real content."""
+    try:
+        if path.stat().st_size > _LFS_POINTER_MAX_SIZE:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(len(_LFS_POINTER_PREFIX)) == _LFS_POINTER_PREFIX
+    except OSError:
+        return False
 
 # ---------------------------------------------------------------------------
 
@@ -81,8 +96,12 @@ def download_models(
         target = dest / filename
 
         if target.exists() and not overwrite:
-            print(f"  {filename} — already exists, skipping.")
-            continue
+            if _is_lfs_pointer_stub(target):
+                print(f"  {filename} — found a Git LFS pointer stub, not the "
+                      "real file. Replacing it.")
+            else:
+                print(f"  {filename} — already exists, skipping.")
+                continue
 
         print(f"  {filename}")
         _download_file(url, target)
