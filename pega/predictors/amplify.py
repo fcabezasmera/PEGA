@@ -54,6 +54,17 @@ def _run_amplify(fasta_path: Path, model_type: str) -> pd.DataFrame:
         if model_type == "imbalanced":
             cmd += ["-m", "imbalanced"]
 
+        # AMPlify's TensorFlow 1.x backend defaults its internal thread pool
+        # to the machine's full core count. PEGA already parallelises across
+        # predictors/chunks at a higher level (--jobs), so left unconstrained
+        # this causes severe CPU oversubscription on many-core nodes — two
+        # AMPlify variants each grabbing dozens of threads can make a 10-
+        # sequence job take longer than a 1M-sequence one would otherwise.
+        # Pin it to a single thread per process.
+        env = {**os.environ, "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
+               "OPENBLAS_NUM_THREADS": "1", "TF_NUM_INTEROP_THREADS": "1",
+               "TF_NUM_INTRAOP_THREADS": "1"}
+
         try:
             subprocess.run(
                 cmd,
@@ -61,6 +72,7 @@ def _run_amplify(fasta_path: Path, model_type: str) -> pd.DataFrame:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=tmp_dir,           # AMPlify writes output files here
+                env=env,
             )
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
