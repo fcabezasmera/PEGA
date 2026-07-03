@@ -16,6 +16,16 @@ import argparse
 import sys
 from pathlib import Path
 
+# Force line-buffering even when stdout/stderr are redirected to a file
+# (e.g. `nohup PEGA screen ... &> log.txt`). Without this, Python switches
+# to full block buffering for non-TTY output, so progress lines can sit
+# unflushed for a long time even while PEGA is actively working.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
+
 # ---------------------------------------------------------------------------
 # ASCII banner — lazy to avoid AttributeError on import
 # ---------------------------------------------------------------------------
