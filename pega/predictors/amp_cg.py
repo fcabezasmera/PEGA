@@ -121,6 +121,13 @@ class AMPCGPredictor(BasePredictor):
         from transformers import AutoTokenizer
         import transformers
 
+        # PEGA already parallelises across predictors/chunks via --jobs;
+        # without this, PyTorch also tries to use every core on the node for
+        # its own op-level threading, causing severe oversubscription when
+        # many predictor threads run inference concurrently (same failure
+        # mode fixed for AMPlify's subprocess — see pega.predictors.amplify).
+        torch.set_num_threads(1)
+
         # Suppress HuggingFace Hub and transformers informational output.
         # The UNEXPECTED/MISSING keys in the load report are expected —
         # lm_head keys come from the base ESM-2 and are unused;

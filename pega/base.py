@@ -15,6 +15,7 @@ Adding a new predictor
 from __future__ import annotations
 
 import abc
+import functools
 import shutil
 import subprocess
 from pathlib import Path
@@ -95,8 +96,14 @@ class BasePredictor(abc.ABC):
         return shutil.which(name) is not None
 
     @staticmethod
+    @functools.lru_cache(maxsize=None)
     def _r_package_installed(package: str) -> bool:
-        """Return ``True`` if an R package is installed inside pega_env."""
+        """Return ``True`` if an R package is installed inside pega_env.
+
+        Cached — this spawns an Rscript subprocess, and availability can't
+        change mid-process, so repeated calls (e.g. once per chunk in
+        ``screen_sequences``) would otherwise re-spawn it needlessly.
+        """
         # Use the conda environment's Rscript if available
         import os
         conda_prefix = os.environ.get("CONDA_PREFIX", "")

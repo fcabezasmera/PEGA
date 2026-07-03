@@ -28,6 +28,7 @@ https://github.com/BigDataBiology/macrel
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
 import subprocess
@@ -61,7 +62,11 @@ class MacrelPredictor(BasePredictor):
         return "Macrel_score"
 
     @classmethod
+    @functools.lru_cache(maxsize=None)
     def is_available(cls) -> bool:
+        # Cached — spawns a "conda run" subprocess, and availability can't
+        # change mid-process, so repeated calls (e.g. once per chunk in
+        # screen_sequences) would otherwise re-spawn it needlessly.
         if not cls._executable_on_path("conda"):
             return False
         result = subprocess.run(

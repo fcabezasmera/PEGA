@@ -79,6 +79,17 @@ class AMPnetPredictor(BasePredictor):
 
         import tensorflow as tf
 
+        # PEGA already parallelises across predictors/chunks via --jobs;
+        # without this, TF also tries to use every core on the node for its
+        # own op-level threading, causing severe oversubscription when many
+        # predictor threads run TF concurrently (same failure mode fixed for
+        # AMPlify's subprocess — see pega.predictors.amplify).
+        try:
+            tf.config.threading.set_intra_op_parallelism_threads(1)
+            tf.config.threading.set_inter_op_parallelism_threads(1)
+        except RuntimeError:
+            pass  # TF already initialised elsewhere in this process; skip.
+
         model_path = cls.models_dir() / "convolutional_nn_1.h5"
         if not model_path.exists():
             raise FileNotFoundError(
