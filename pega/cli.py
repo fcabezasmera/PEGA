@@ -37,7 +37,7 @@ def _get_banner() -> str:
                                          ██╔══╝   ██╔╝   
                                          ╚═╝      ╚═╝    
 
- Peptide Evolution via Genetic Algorithm  v{{version}}
+ Peptide Evolution via Genetic Algorithm  v{version}
  https://github.com/fcabezasmera/PEGA
 """
 
@@ -116,14 +116,17 @@ def cmd_score(args: argparse.Namespace) -> int:
     if not args.quiet:
         print(_get_banner())
 
-    # Parse --ensemble argument
-    ensemble_arg = args.ensemble
+    # Parse --ensembles argument
+    ensemble_arg = args.ensembles
     if ensemble_arg is None:
         ensemble_names = None          # all
     elif len(ensemble_arg) == 1 and ensemble_arg[0].lower() == "none":
         ensemble_names = []            # skip all
     else:
-        ensemble_names = ensemble_arg  # specific list
+        ensemble_names = [
+            f"ensemble_{e}_score" if not e.startswith("ensemble_") else e
+            for e in ensemble_arg
+        ]
 
     try:
         df = calculate_scores(
@@ -133,6 +136,7 @@ def cmd_score(args: argparse.Namespace) -> int:
             jobs=args.jobs,
             quiet=args.quiet,
             ensemble_names=ensemble_names,
+            no_individual_scores=args.no_individual_scores,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -163,14 +167,19 @@ def cmd_screen(args: argparse.Namespace) -> int:
             for e in args.ensembles
         ]
 
-    screen_sequences(
-        fasta_path=fasta,
-        output_dir=getattr(args, "dir", None),
-        chunk_size=args.chunk,
-        ensemble_names=ensemble_names,
-        no_individual_scores=getattr(args, "no_individual_scores", False),
-        jobs=args.jobs,
-    )
+    try:
+        screen_sequences(
+            fasta_path=fasta,
+            output_dir=getattr(args, "dir", None),
+            chunk_size=args.chunk,
+            ensemble_names=ensemble_names,
+            no_individual_scores=getattr(args, "no_individual_scores", False),
+            jobs=args.jobs,
+        )
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     return 0
 
 
@@ -248,6 +257,11 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Output TSV file path. Default: PEGA_results_<timestamp>.tsv")
     sp.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
                     help="Parallel workers. Use -1 for 75%% of available CPU threads. Default: 1 (sequential).")
+    sp.add_argument("--ensembles", "-e", nargs="+", metavar="NAME",
+                    help="Only compute specific ensembles (AMP AVP AFP ABP). "
+                         "Pass 'none' to skip all ensembles. Default: all.")
+    sp.add_argument("--no-individual-scores", action="store_true", default=False,
+                    help="Output only ensemble columns.")
     sp.add_argument("-q", "--quiet", action="store_true", default=False,
                     help="Suppress banner and framework warnings.")
 

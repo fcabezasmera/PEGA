@@ -203,7 +203,9 @@ def screen_sequences(
     out_scores   = output_dir / "scores.tsv"
 
     # ── Resolve predictor set ──────────────────────────────────────────
-    if ensemble_names is not None and predictor_names is None:
+    # Only auto-restrict predictors when specific ensembles were requested;
+    # ensemble_names == [] means "skip all ensembles", not "skip all predictors".
+    if ensemble_names and predictor_names is None:
         from pega.ensemble import required_predictors
         needed_cols     = required_predictors(ensemble_names)
         predictor_names = [
@@ -404,7 +406,9 @@ def calculate_scores(
         fasta_path = _tmp_fasta
 
     # ── Resolve predictor set ──────────────────────────────────────────
-    if ensemble_names is not None and predictor_names is None:
+    # Only auto-restrict predictors when specific ensembles were requested;
+    # ensemble_names == [] means "skip all ensembles", not "skip all predictors".
+    if ensemble_names and predictor_names is None:
         from pega.ensemble import required_predictors
         needed_cols     = required_predictors(ensemble_names)
         predictor_names = [

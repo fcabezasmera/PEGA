@@ -323,6 +323,34 @@ def compute_ensembles(
     return df
 
 
+def required_predictors(ensemble_names: list[str]) -> set[str]:
+    """Return the predictor score-column names needed for the given ensembles.
+
+    Used to auto-restrict which predictors are run when the caller asks for
+    specific ensembles only (e.g. ``PEGA score --ensembles AMP``). Names not
+    found in :data:`ENSEMBLES` are ignored here — callers that need to warn
+    about unknown ensemble names already validate them separately.
+
+    Parameters
+    ----------
+    ensemble_names : list[str]
+        Ensemble names, e.g. ``["ensemble_AMP_score"]``.
+
+    Returns
+    -------
+    set[str]
+        Score-column names (e.g. ``{"AMP_CG_score", "ampir_mature_score"}``)
+        required by at least one of the given ensembles.
+    """
+    needed: set[str] = set()
+    for name in ensemble_names:
+        cfg = ENSEMBLES.get(name)
+        if cfg is None:
+            continue
+        needed.update(col for col, *_ in cfg["components"])
+    return needed
+
+
 def list_ensembles() -> list[dict]:
     """Return metadata for all defined ensembles."""
     return [
