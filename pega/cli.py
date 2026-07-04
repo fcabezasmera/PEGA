@@ -16,6 +16,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from rich.box import SIMPLE_HEAVY
+from rich.console import Console
+from rich.table import Table
+
 # Force line-buffering even when stdout/stderr are redirected to a file
 # (e.g. `nohup PEGA screen ... &> log.txt`). Without this, Python switches
 # to full block buffering for non-TTY output, so progress lines can sit
@@ -26,30 +30,68 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+console = Console()
+
 # ---------------------------------------------------------------------------
-# ASCII banner — lazy to avoid AttributeError on import
+# Banner — lazy to avoid AttributeError on import
 # ---------------------------------------------------------------------------
 
-def _get_banner() -> str:
-    try:
-        import pega as _pega
-        version = _pega.__version__
-    except AttributeError:
-        version = "0.1.0"
-    return f"""
- ██████╗ ███████╗ ██████╗  █████╗ 
+_LOGO = r"""
+ ██████╗ ███████╗ ██████╗  █████╗
  ██╔══██╗██╔════╝██╔════╝ ██╔══██╗
  ██████╔╝█████╗  ██║  ███╗███████║
  ██╔═══╝ ██╔══╝  ██║   ██║██╔══██║
  ██║     ███████╗╚██████╔╝██║  ██║   ██╗ █████╗ ██╗  ██╗
  ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝ ██╔══██╗╚██╗██╔╝
-                                         █████╔╝  ╚███╔╝ 
-                                         ██╔══╝   ██╔╝   
-                                         ╚═╝      ╚═╝    
+                                         █████╔╝  ╚███╔╝
+                                         ██╔══╝   ██╔╝
+                                         ╚═╝      ╚═╝    """
 
- Peptide Evolution via Genetic Algorithm  v{version}
- https://github.com/fcabezasmera/PEGA
-"""
+_CHAIN_COLORS = ["cyan", "magenta", "blue", "green"]
+
+
+def _peptide_chain(width: int) -> str:
+    """A small colored "peptide backbone" decoration: ●─●─●─●─...
+
+    Purely cosmetic — a nod to what PEGA actually works on.
+    """
+    n = max(1, width // 2)
+    residues = [
+        f"[{_CHAIN_COLORS[i % len(_CHAIN_COLORS)]}]●[/{_CHAIN_COLORS[i % len(_CHAIN_COLORS)]}]"
+        for i in range(n)
+    ]
+    return "[dim]─[/dim]".join(residues)
+
+
+def _get_version() -> str:
+    try:
+        import pega as _pega
+        return _pega.__version__
+    except AttributeError:
+        return "0.1.0"
+
+
+def _print_banner() -> None:
+    """Print the PEGA banner, adapting to the terminal width.
+
+    Full logo on normal-or-wider terminals; a compact one-liner on narrow
+    ones (e.g. a tmux pane on a cluster node), where the block-letter
+    logo would otherwise wrap and look broken.
+    """
+    version = _get_version()
+    if console.width >= 60:
+        console.print(_LOGO, style="bold cyan", highlight=False)
+        console.print(f"  {_peptide_chain(min(console.width - 4, 56))}")
+        console.print(
+            f"  [bold]Peptide Evolution via Genetic Algorithm[/bold]  "
+            f"[green]v{version}[/green]"
+        )
+        console.print("  [dim]https://github.com/fcabezasmera/PEGA[/dim]\n")
+    else:
+        console.print(
+            f"[bold cyan]PEGA[/bold cyan] [green]v{version}[/green] "
+            f"[dim]— Peptide Evolution via Genetic Algorithm[/dim]\n"
+        )
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,19 +136,45 @@ def _fasta_stats(fasta_path: Path) -> dict:
 
 def cmd_list(args: argparse.Namespace) -> int:
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
     if args.ensembles:
         from pega.ensemble import list_ensembles, ENSEMBLES
-        print(f"  {'Name':<24}  {'Method':<14}  {'Pred':>4}  {'MCC':>6}  {'AUC':>6}  Description")
-        print("  " + "─" * 82)
+        table = Table(box=SIMPLE_HEAVY, show_edge=False)
+        table.add_column("Name", style="bold cyan")
+        table.add_column("Method")
+        table.add_column("Pred", justify="right")
+        table.add_column("MCC", justify="right")
+        table.add_column("AUC", justify="right")
+        table.add_column("Description")
         for e in list_ensembles():
-            print(f"  {e['name']:<24}  {e['method']:<14}  {e['n_predictors']:>4}  "
-                  f"{e['metrics']['mcc']:>6.3f}  {e['metrics']['auc']:>6.3f}  "
-                  f"{e['description'][:40]}")
-        print(f"\n  {len(ENSEMBLES)} ensembles available.")
+            table.add_row(
+                e["name"], e["method"], str(e["n_predictors"]),
+                f"{e['metrics']['mcc']:.3f}", f"{e['metrics']['auc']:.3f}",
+                e["description"][:40],
+            )
+        console.print(table)
+        console.print(f"\n  [bold]{len(ENSEMBLES)}[/bold] ensembles available.")
     else:
         from pega.registry import registry
-        print(registry.summary())
+        table = Table(box=SIMPLE_HEAVY, show_edge=False)
+        table.add_column("ID", justify="right")
+        table.add_column("Predictor", style="bold")
+        table.add_column("Status")
+        table.add_column("Type")
+        table.add_column("Description")
+        for cls in registry.list_all():
+            status = ("[green]available[/green]" if cls.is_available()
+                       else "[red]unavailable[/red]")
+            table.add_row(
+                str(cls.predictor_id), cls.display_name, status,
+                cls.category, cls.description,
+            )
+        console.print(table)
+        n_ok = len(registry.list_available())
+        n_all = len(registry.list_all())
+        console.print(
+            f"\n  [bold]{n_ok}[/bold] of [bold]{n_all}[/bold] predictors available."
+        )
     return 0
 
 
@@ -124,7 +192,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     predictors = args.predictors or None
 
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
 
     # Parse --ensembles argument
     ensemble_arg = args.ensembles
@@ -168,7 +236,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
         return 1
 
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
 
     ensemble_names = None
     if hasattr(args, "ensembles") and args.ensembles:
@@ -196,7 +264,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
 def cmd_validate(args: argparse.Namespace) -> int:
     from pega.preprocess.validator import validate_fasta
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
     ok, _ = validate_fasta(Path(args.fasta), verbose=True)
     return 0 if ok else 1
 
@@ -204,7 +272,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_setup(args: argparse.Namespace) -> int:
     from pega.setup_envs import print_status, setup_all
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
     if args.status:
         print("Environment status:\n")
         print_status()
@@ -216,7 +284,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 def cmd_download_models(args: argparse.Namespace) -> int:
     from pega.download_models import download_models
     if not args.quiet:
-        print(_get_banner())
+        _print_banner()
     download_models(model_dir=args.dir, overwrite=args.overwrite)
     return 0
 

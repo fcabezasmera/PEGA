@@ -15,10 +15,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from rich.console import Console
 
 from pega.registry import registry
 
 _CANONICAL_SET = set("ACDEFGHIKLMNPQRSTVWY")
+_console = Console()
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +124,11 @@ def _progress(current: int, total: int, name: str,
               elapsed: float | None = None) -> None:
     width    = len(str(total))
     time_str = f"  {elapsed:.1f}s" if elapsed is not None else ""
-    print(f"  [{current:{width}}/{total}]  {name}{time_str}")
+    if name.endswith(" ✓"):
+        name = name[:-2] + " [green]✓[/green]"
+    elif name.endswith(" ✗"):
+        name = name[:-2] + " [red]✗[/red]"
+    _console.print(f"  \\[{current:{width}}/{total}]  {name}{time_str}")
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +469,10 @@ def calculate_scores(
         _tqdm_module.tqdm.__init__ = _silent_init
         # Prevent joblib/loky conflicts with scikit-learn inside threads
         os.environ["LOKY_MAX_CPU_COUNT"] = "1"
-        print(f"  Running {total} predictors with {max_workers} parallel workers...")
+        _console.print(
+            f"  Running [bold]{total}[/bold] predictors with "
+            f"[bold]{max_workers}[/bold] parallel workers..."
+        )
         print()
         completed = 0
 
@@ -541,7 +550,10 @@ def calculate_scores(
         out_path = Path(export_tsv)
         merged.to_csv(out_path, sep="\t", index=False)
         n_cols = len(merged.columns) - 1
-        print(f"\n  Saved → {out_path}  ({len(merged)} sequences, {n_cols} columns)")
+        _console.print(
+            f"\n  [bold green]Saved[/bold green] → [bold]{out_path}[/bold]  "
+            f"({len(merged)} sequences, {n_cols} columns)"
+        )
 
     # ── Cleanup ───────────────────────────────────────────────────────
     if _tmp_fasta is not None and _tmp_fasta.exists():
