@@ -18,6 +18,7 @@ import abc
 import functools
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import ClassVar
 
@@ -118,6 +119,47 @@ class BasePredictor(abc.ABC):
             capture_output=True,
         )
         return result.returncode == 0
+
+    @staticmethod
+    def _run_subprocess_with_progress(
+        cmd: list[str],
+        desc: str,
+        cwd: str | None = None,
+        env: dict | None = None,
+    ) -> subprocess.CompletedProcess:
+        """Run ``cmd`` to completion, showing a cosmetic tqdm progress bar.
+
+        Runs ``subprocess.run(cmd, capture_output=True, ...)`` on a
+        background thread; the polling loop driving the progress bar only
+        checks ``thread.is_alive()`` and never touches the child's stdout/
+        stderr pipes directly. This matters: a naive
+        ``Popen(...); while process.poll() is None: sleep()`` loop never
+        drains those pipes, so a child that writes more than the OS pipe
+        buffer (commonly 64KB) blocks forever on write() with nothing
+        reading it — a silent deadlock discovered in production when
+        amPEPpy hung a multi-day cluster screening run. ``subprocess.run``
+        drains both pipes concurrently internally, so this can't happen
+        here regardless of how much output ``cmd`` produces.
+        """
+        result_holder: dict[str, subprocess.CompletedProcess] = {}
+
+        def _run() -> None:
+            result_holder["result"] = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=cwd, env=env,
+            )
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+        from tqdm import tqdm
+        with tqdm(total=100, desc=desc, unit="%", leave=False) as pbar:
+            while thread.is_alive():
+                thread.join(timeout=0.5)
+                if pbar.n < 80:
+                    pbar.update(2)
+            pbar.update(100 - pbar.n)
+
+        return result_holder["result"]
 
     @staticmethod
     def _validate_fasta(fasta_path: str | Path) -> Path:

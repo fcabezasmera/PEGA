@@ -29,11 +29,9 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pandas as pd
-from tqdm import tqdm
 
 from pega.base import BasePredictor
 
@@ -83,20 +81,11 @@ class AmPEPpyPredictor(BasePredictor):
                 "-o", results_file,
             ]
 
-            with tqdm(total=100, desc="amPEPpy", unit="%", leave=False) as pbar:
-                process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            result = self._run_subprocess_with_progress(cmd, desc="amPEPpy")
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd, stderr=result.stderr
                 )
-                while process.poll() is None:
-                    time.sleep(0.5)
-                    if pbar.n < 80:
-                        pbar.update(2)
-                returncode = process.wait()
-                if returncode != 0:
-                    raise subprocess.CalledProcessError(
-                        returncode, cmd, stderr=process.stderr.read()
-                    )
-                pbar.update(100 - pbar.n)
 
             if not os.path.exists(results_file):
                 raise RuntimeError("amPEPpy did not produce the expected results file.")

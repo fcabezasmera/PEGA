@@ -38,11 +38,9 @@ import functools
 import os
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import pandas as pd
-from tqdm import tqdm
 
 from pega.base import BasePredictor
 
@@ -101,20 +99,11 @@ class MacrelPredictor(BasePredictor):
                 "--keep-negatives",
             ]
 
-            with tqdm(total=100, desc="Macrel", unit="%", leave=False) as pbar:
-                process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            result = self._run_subprocess_with_progress(cmd, desc="Macrel")
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd, stderr=result.stderr
                 )
-                while process.poll() is None:
-                    time.sleep(1)
-                    if pbar.n < 70:
-                        pbar.update(2)
-                returncode = process.wait()
-                if returncode != 0:
-                    raise subprocess.CalledProcessError(
-                        returncode, cmd, stderr=process.stderr.read()
-                    )
-                pbar.update(100 - pbar.n)
 
             # Locate and decompress the output file
             gz_file = os.path.join(output_dir, "macrel.out.prediction.gz")

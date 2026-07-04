@@ -29,13 +29,10 @@ https://github.com/Legana/ampir
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pandas as pd
-from tqdm import tqdm
 
 from pega.base import BasePredictor
 
@@ -80,27 +77,13 @@ write.csv(df, file = "{csv_path}", row.names = FALSE)
         with open(r_script_path, "w") as f:
             f.write(r_code)
 
-        process = subprocess.Popen(
-            ["Rscript", r_script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+        result = BasePredictor._run_subprocess_with_progress(
+            ["Rscript", r_script_path], desc=f"ampir ({model_type})"
         )
-
-        with tqdm(
-            total=100, desc=f"ampir ({model_type})", unit="%", leave=False
-        ) as pbar:
-            while process.poll() is None:
-                time.sleep(0.5)
-                if pbar.n < 90:
-                    pbar.update(2)
-            pbar.update(100 - pbar.n)
-
-        returncode = process.wait()
-        if returncode != 0:
+        if result.returncode != 0:
             raise RuntimeError(
-                f"ampir ({model_type}) failed (exit {returncode}).\n"
-                f"R stderr: {process.stderr.read()}\n"
+                f"ampir ({model_type}) failed (exit {result.returncode}).\n"
+                f"R stderr: {result.stderr}\n"
                 "Check your R installation: "
                 "Rscript -e 'install.packages(\"ampir\")'"
             )
