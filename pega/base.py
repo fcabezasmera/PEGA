@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import abc
 import functools
+import os
 import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 from typing import ClassVar
@@ -106,7 +108,6 @@ class BasePredictor(abc.ABC):
         ``screen_sequences``) would otherwise re-spawn it needlessly.
         """
         # Use the conda environment's Rscript if available
-        import os
         conda_prefix = os.environ.get("CONDA_PREFIX", "")
         rscript = os.path.join(conda_prefix, "bin", "Rscript") if conda_prefix else ""
         if not rscript or not Path(rscript).exists():
@@ -129,37 +130,56 @@ class BasePredictor(abc.ABC):
     ) -> subprocess.CompletedProcess:
         """Run ``cmd`` to completion, showing a cosmetic tqdm progress bar.
 
-        Runs ``subprocess.run(cmd, capture_output=True, ...)`` on a
-        background thread; the polling loop driving the progress bar only
-        checks ``thread.is_alive()`` and never touches the child's stdout/
-        stderr pipes directly. This matters: a naive
-        ``Popen(...); while process.poll() is None: sleep()`` loop never
-        drains those pipes, so a child that writes more than the OS pipe
-        buffer (commonly 64KB) blocks forever on write() with nothing
-        reading it — a silent deadlock discovered in production when
-        amPEPpy hung a multi-day cluster screening run. ``subprocess.run``
-        drains both pipes concurrently internally, so this can't happen
-        here regardless of how much output ``cmd`` produces.
+        stdout/stderr are redirected to temp files, not ``PIPE``. A pipe
+        only reaches EOF once *every* process holding its write end has
+        closed it — including descendants forked at the C level (e.g. by
+        a BLAS library) that never show up in Python's view of the process
+        tree. If such a descendant outlives the visible child, reading the
+        pipe (``communicate()``) blocks forever even after that child has
+        exited — confirmed in production via a py-spy dump showing a
+        thread stuck in ``select()`` inside ``communicate()`` while the
+        child it was waiting on was already a defunct zombie. A real file
+        has no such "wait for every writer" semantics: ``Popen.wait()``
+        only tracks the direct child's own exit status, so this can't
+        happen regardless of what that child (or anything it spawned)
+        does with its file descriptors.
+
+        An earlier version of this method used
+        ``subprocess.run(capture_output=True)`` (i.e. ``PIPE``) on a
+        background thread specifically to avoid a *different*, simpler
+        deadlock (a naive polling loop that never drains the pipe at
+        all — see git history) — that fix was necessary but not
+        sufficient; this file-based version replaces it.
         """
-        result_holder: dict[str, subprocess.CompletedProcess] = {}
+        with tempfile.TemporaryDirectory() as io_dir:
+            stdout_path = os.path.join(io_dir, "stdout.txt")
+            stderr_path = os.path.join(io_dir, "stderr.txt")
+            result_holder: dict[str, int] = {}
 
-        def _run() -> None:
-            result_holder["result"] = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=cwd, env=env,
-            )
+            def _run() -> None:
+                with open(stdout_path, "wb") as out_f, open(stderr_path, "wb") as err_f:
+                    proc = subprocess.run(
+                        cmd, stdout=out_f, stderr=err_f, cwd=cwd, env=env,
+                    )
+                result_holder["returncode"] = proc.returncode
 
-        thread = threading.Thread(target=_run, daemon=True)
-        thread.start()
+            thread = threading.Thread(target=_run, daemon=True)
+            thread.start()
 
-        from tqdm import tqdm
-        with tqdm(total=100, desc=desc, unit="%", leave=False) as pbar:
-            while thread.is_alive():
-                thread.join(timeout=0.5)
-                if pbar.n < 80:
-                    pbar.update(2)
-            pbar.update(100 - pbar.n)
+            from tqdm import tqdm
+            with tqdm(total=100, desc=desc, unit="%", leave=False) as pbar:
+                while thread.is_alive():
+                    thread.join(timeout=0.5)
+                    if pbar.n < 80:
+                        pbar.update(2)
+                pbar.update(100 - pbar.n)
 
-        return result_holder["result"]
+            stdout = Path(stdout_path).read_text(errors="replace")
+            stderr = Path(stderr_path).read_text(errors="replace")
+
+        return subprocess.CompletedProcess(
+            cmd, result_holder["returncode"], stdout, stderr
+        )
 
     @staticmethod
     def _validate_fasta(fasta_path: str | Path) -> Path:
